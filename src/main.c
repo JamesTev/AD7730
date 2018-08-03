@@ -86,8 +86,13 @@ int main(void)
   uint32_t count = 0;
   HAL_Delay(200);
 
+
+
   while (1)
   {
+	  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
+	  while(HAL_GPIO_ReadPin(gauge1.RDY_GPIO_Port, gauge1.RDY_Pin) != GPIO_PIN_RESET); //wait for ready pin to go low
+	  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 1);
 	  AD7730_Read(gauge1);
 //	  if(count < 200){
 //		  AD7730_Read_Cont(gauge1);

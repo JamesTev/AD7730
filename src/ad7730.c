@@ -107,14 +107,21 @@ void Rx_AD7730(uint16_t length, AD7730 gauge){
 }
 
 void AD7730_Read(AD7730 gauge){
+
+	// need to put AD7730 into single read mode before every read (returns to idle after every conversion)
+	spi_tx_buffer[0] = CR_SINGLE_WRITE | CR_MODE_REGISTER; //write to comms register and set next write to mode reg
+	Tx_AD7730(1, gauge); //0x02
+
+	spi_tx_buffer[0] = MR1_MODE_SINGLE | CURRENT_MODE_1_SETTINGS; //write to mode reg startin cont readings for 0-10mV range TODO: check this for bipolar
+	spi_tx_buffer[1] = CURRENT_MODE_0_SETTINGS;
+	Tx_AD7730(2, gauge);
+
 	spi_tx_buffer[0] = CR_SINGLE_READ | CR_DATA_REGISTER;
 	Tx_AD7730(1, gauge);
 
 	spi_tx_buffer[0] = READ_ONLY; //transfer 0xFF (set MSB) to prevent writing to CR accidentally during reading
 	spi_tx_buffer[1] = READ_ONLY;
 	spi_tx_buffer[2] = READ_ONLY;
-
-	while(HAL_GPIO_ReadPin(gauge.RDY_GPIO_Port, gauge.RDY_Pin) != GPIO_PIN_RESET); //wait for ready pin to go low after calibration
 
 	HAL_GPIO_WritePin(gauge.SS_GPIO_Port, gauge.SS_Pin, GPIO_PIN_RESET); //slave select low to begin
 	HAL_SPI_TransmitReceive(&hspi2, (uint8_t *)&spi_tx_buffer, (uint8_t *)&spi_rx_buffer, 3, 5000); //assume this will receive the bytes too?
@@ -132,8 +139,6 @@ void AD7730_Start_Cont_Read(AD7730 gauge){
 	spi_tx_buffer[0] = MR1_MODE_CONTINUOUS | CURRENT_MODE_1_SETTINGS; //write to mode reg startin cont readings for 0-10mV range TODO: check this for bipolar
 	spi_tx_buffer[1] = CURRENT_MODE_0_SETTINGS;
 	Tx_AD7730(2, gauge); //0x2180
-
-	while(HAL_GPIO_ReadPin(gauge.RDY_GPIO_Port, gauge.RDY_Pin) != GPIO_PIN_RESET); //wait for ready pin to go low
 
 	spi_tx_buffer[0] = CR_CONTINUOUS_READ_START | CR_DATA_REGISTER;
 	Tx_AD7730(1, gauge); //0x21
