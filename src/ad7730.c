@@ -29,7 +29,7 @@ void AD7730_Init(AD7730 gauge)
 	GPIO_InitStruct.Pull = GPIO_NOPULL;
 	HAL_GPIO_Init(gauge.RDY_GPIO_Port, &GPIO_InitStruct);
 
-	AD7730_Config(gauge); //config gauge with all pre-configured settings
+	HAL_GPIO_WritePin(gauge.SS_GPIO_Port, gauge.SS_Pin, GPIO_PIN_SET); //set /SS high at first
 }
 
 //Think by not declaring static, automatically extern
@@ -45,8 +45,8 @@ void AD7730_Config(AD7730 gauge){
 	Tx_AD7730(1, gauge); //will this just discard data shifted into RX data register?
 
 	spi_tx_buffer[0] = FR2_SINC_AVERAGING_512;
-	spi_tx_buffer[1] = FR1_SKIP_OFF|FR1_FAST_OFF;
-	spi_tx_buffer[2] = FR0_CHOP_ON;
+	spi_tx_buffer[1] = FR1_SKIP_OFF|FR1_FAST_ON;
+	spi_tx_buffer[2] = FR0_CHOP_OFF;
 	Tx_AD7730(3, gauge); //will this just discard data shifted into RX data register?
 
 	//check if settings were stored - read filter reg:
@@ -61,7 +61,7 @@ void AD7730_Config(AD7730 gauge){
 	spi_tx_buffer[0] = DACR_OFFSET_SIGN_POSITIVE | DACR_OFFSET_NONE;
 	Tx_AD7730(1, gauge);
 
-	//-------------- Internal Full Scale Calibration (max load) -----------------------
+	//-------------- Internal Full Scale Calibration -----------------------
 	spi_tx_buffer[0] = CR_SINGLE_WRITE | CR_MODE_REGISTER;
 	Tx_AD7730(1, gauge); //will this just discard data shifted into RX data register?
 
@@ -71,7 +71,7 @@ void AD7730_Config(AD7730 gauge){
 
 	while(HAL_GPIO_ReadPin(gauge.RDY_GPIO_Port, gauge.RDY_Pin) != GPIO_PIN_RESET); //wait for ready pin to go low after calibration
 
-	//-------------- Internal Zero Calibration (min load) -----------------------
+	//-------------- Internal Zero Calibration  -----------------------
 	spi_tx_buffer[0] = CR_SINGLE_WRITE | CR_MODE_REGISTER;
 	Tx_AD7730(1, gauge); //will this just discard data shifted into RX data register?
 
@@ -124,7 +124,7 @@ void AD7730_Read(AD7730 gauge){
 	spi_tx_buffer[2] = READ_ONLY;
 
 	HAL_GPIO_WritePin(gauge.SS_GPIO_Port, gauge.SS_Pin, GPIO_PIN_RESET); //slave select low to begin
-	HAL_SPI_TransmitReceive(&hspi2, (uint8_t *)&spi_tx_buffer, (uint8_t *)&spi_rx_buffer, 3, 5000); //assume this will receive the bytes too?
+	HAL_SPI_TransmitReceive(&hspi2, (uint8_t *)&spi_tx_buffer, (uint8_t *)&spi_rx_buffer, 3, 1000); //assume this will receive the bytes too?
 	HAL_GPIO_WritePin(gauge.SS_GPIO_Port, gauge.SS_Pin, GPIO_PIN_SET); //slave select low to begin
 }
 
@@ -157,7 +157,7 @@ void AD7730_Read_Cont(AD7730 gauge){
 		while(HAL_GPIO_ReadPin(gauge.RDY_GPIO_Port, gauge.RDY_Pin) != GPIO_PIN_RESET); //wait for ready pin to go low
 
 		HAL_GPIO_WritePin(gauge.SS_GPIO_Port, gauge.SS_Pin, GPIO_PIN_RESET); //slave select low to begin
-		HAL_SPI_TransmitReceive(&hspi2, (uint8_t *)&spi_tx_buffer, (uint8_t *)&spi_rx_buffer,3, 5000); //assume this will receive the bytes too?
+		HAL_SPI_TransmitReceive(&hspi2, (uint8_t *)&spi_tx_buffer, (uint8_t *)&spi_rx_buffer,3, 1000); //assume this will receive the bytes too?
 		HAL_GPIO_WritePin(gauge.SS_GPIO_Port, gauge.SS_Pin, GPIO_PIN_SET); //slave select low to begin
 
 		// uint32_t result = x3 + (x2 << 8) + (x1 << 16); //consider returning int32_t using something like this (still need to deal with MSB for signed)
@@ -173,20 +173,26 @@ void AD7730_Stop_Cont_Read(AD7730 gauge){
 	CONT_READ_STARTED = RESET;
 }
 
-int32_t Process_Buffer(void){
-	// Replicate the most significant bit to pad out a 32-bit signed integer
-	uint8_t filler = 0x00;
-	if (spi_rx_buffer[2] & 0x80) {
-		filler = 0xFF;
-	}
+/*
+ * Expects data in spi_rx_buffer. See AD7730 manual - in bipolar mode
+ * full scale negative: 0000...000
+ * zero differential: 10000...000
+ * full scale positive: 1111...111 (so can consider as unsigned 32 bit int)
+ */
+int32_t AD7730_Process_Reading_Num(void){
+	uint32_t result = ((uint32_t)0) | spi_rx_buffer[0] | spi_rx_buffer[1] | spi_rx_buffer[2];
+	return result - 0x800000; //so that 0 will no longer be 100..00 but actually 0
+}
 
-//	// Construct a 32-bit signed integer
-//	value = ( static_cast<unsigned long>(filler) << 24
-//			| static_cast<unsigned long>(data[2]) << 16
-//			| static_cast<unsigned long>(data[1]) << 8
-//			| static_cast<unsigned long>(data[0]) );
-//
-//	return static_cast<long>(value);
+/*
+ * Expects data in spi_rx_buffer. See AD7730 manual - in bipolar mode
+ * full scale negative: 0000...000
+ * zero differential: 10000...000
+ * full scale positive: 1111...111 (so can consider as unsigned 32 bit int)
+ */
+int32_t AD7730_Process_Reading_Percent(void){
+	int32_t reading = AD7730_Process_Reading_Num();
+	return reading/0x7FFFFF * 100; //divide by max full scale voltage
 }
 
 

@@ -9,6 +9,32 @@
 #ifndef AD7730_H_
 #define AD7730_H_
 
+#define GAUGE1_RDY_PORT GPIOE
+#define GAUGE1_RDY_PIN	GPIO_PIN_7
+#define GAUGE1_SS_PORT GPIOE
+#define GAUGE1_SS_PIN GPIO_PIN_9
+
+#define GAUGE2_RDY_PORT GPIOE
+#define GAUGE2_RDY_PIN	GPIO_PIN_11
+#define GAUGE2_SS_PORT GPIOE
+#define GAUGE2_SS_PIN GPIO_PIN_13
+
+#define GAUGE3_RDY_PORT GPIOE
+#define GAUGE3_RDY_PIN	GPIO_PIN_8
+#define GAUGE3_SS_PORT GPIOE
+#define GAUGE3_SS_PIN GPIO_PIN_10
+
+#define GAUGE4_RDY_PORT GPIOE
+#define GAUGE4_RDY_PIN	GPIO_PIN_12
+#define GAUGE4_SS_PORT GPIOE
+#define GAUGE4_SS_PIN GPIO_PIN_14
+
+#define AD7730_RESET_PORT GPIOE
+#define AD7730_RESET_PIN GPIO_PIN_15
+
+#define AD7730_SYNC_PORT GPIOB
+#define AD7730_SYNC_PIN GPIO_PIN_12
+
 #define RESET 8
 #define RDY 9
 #define DEBUG_AD7730 0
@@ -92,8 +118,8 @@ typedef struct _ad7730
 {
 	GPIO_TypeDef* SS_GPIO_Port; //port of SCK
 	GPIO_TypeDef* RDY_GPIO_Port; //port of SCK
-	uint8_t SS_Pin;
-	uint8_t RDY_Pin;
+	uint16_t SS_Pin;
+	uint16_t RDY_Pin;
 
 } AD7730;
 
@@ -106,6 +132,7 @@ void AD7730_Read(AD7730 gauge);
 void AD7730_Start_Cont_Read(AD7730 gauge);
 void AD7730_Read_Cont(AD7730 gauge);
 void AD7730_Stop_Cont_Read(AD7730 gauge);
-int32_t Process_Buffer(void);
+int32_t AD7730_Process_Reading_Num(void);
+int32_t AD7730_Process_Reading_Percent(void);
 
 #endif /* AD7730_H_ */

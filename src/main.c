@@ -51,6 +51,7 @@
 UART_HandleTypeDef huart1;
 DMA_HandleTypeDef hdma_usart1_tx;
 SPI_HandleTypeDef hspi2;
+DMA_HandleTypeDef hdma_spi2_rx;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
@@ -65,6 +66,7 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_SPI2_Init(void);
 static void Init_Gauges(void);
+static void MX_DMA_Init(void);
 
 static volatile AD7730 gauge1;
 static volatile AD7730 gauge2;
@@ -80,30 +82,49 @@ int main(void)
 
   MX_GPIO_Init();
   MX_SPI2_Init();
+  MX_DMA_Init();
   Init_Gauges();
 
-  //AD7730_Start_Cont_Read(gauge1);
   uint32_t count = 0;
+  int8_t dir = 1;
   HAL_Delay(200);
+  //AD7730_Start_Cont_Read(gauge1); //for continuous readings
 
-
+  //************** Keep /sync and /reset pins high in normal operation
 
   while (1)
   {
 	  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
-	  while(HAL_GPIO_ReadPin(gauge1.RDY_GPIO_Port, gauge1.RDY_Pin) != GPIO_PIN_RESET); //wait for ready pin to go low
+	  while(HAL_GPIO_ReadPin(gauge2.RDY_GPIO_Port, gauge2.RDY_Pin) != GPIO_PIN_RESET); //wait for ready pin to go low
 	  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 1);
-	  AD7730_Read(gauge1);
-//	  if(count < 200){
-//		  AD7730_Read_Cont(gauge1);
-//		  count++;
-//		  HAL_GPIO_WritePin(LD5_GPIO_Port, LD5_Pin, 1);
+	  AD7730_Read(gauge2);
+
+//	  AD7730_Read_Cont(gauge1);
+//
+//	  if(dir == 1){
+//		  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
 //	  }
 //	  else{
-//		  HAL_GPIO_WritePin(LD5_GPIO_Port, LD5_Pin, 0);
+//		  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 1);
 //	  }
+//
+//	  if(count > 1000){
+//		  count=0;
+//		  dir = dir*-1;
+//	  }
+//	  count++;
   }
   /* USER CODE END 3 */
+}
+
+void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *hspi){
+	HAL_GPIO_TogglePin(LD3_GPIO_Port, LD3_Pin);
+}
+
+void AD7730_Reset(){
+	HAL_GPIO_WritePin(AD7730_RESET_PORT, AD7730_RESET_PIN, GPIO_PIN_RESET);
+	HAL_Delay(100);
+	HAL_GPIO_WritePin(AD7730_RESET_PORT, AD7730_RESET_PIN, GPIO_PIN_SET);
 }
 
 
@@ -175,9 +196,9 @@ static void MX_SPI2_Init(void)
   hspi2.Init.Direction = SPI_DIRECTION_2LINES;
   hspi2.Init.DataSize = SPI_DATASIZE_8BIT;
   hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi2.Init.CLKPhase = SPI_PHASE_2EDGE; //confirm this is the correct setting
+  hspi2.Init.CLKPhase = SPI_PHASE_2EDGE; //****This is for AD7730
   hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32; //investigate effect of changing this
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32; //TODO: investigate effect of changing this
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -186,6 +207,24 @@ static void MX_SPI2_Init(void)
   {
     _Error_Handler(__FILE__, __LINE__);
   }
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
+  /* DMA1_Stream6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0); //USART2 TX?
+  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
 
 }
 
@@ -199,6 +238,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOE_CLK_ENABLE(); /************ Need GPIOE clock too!
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOD, LD4_Pin|LD3_Pin|LD5_Pin|LD6_Pin, GPIO_PIN_RESET);
@@ -216,20 +256,32 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
-  // ************ won't actually need these below
+  GPIO_InitStruct.Pin = AD7730_RESET_PIN;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(AD7730_RESET_PORT, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : RDY_Pin */
-   GPIO_InitStruct.Pin = GPIO_PIN_0;
-   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-   GPIO_InitStruct.Pull = GPIO_NOPULL;
-   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+  GPIO_InitStruct.Pin = AD7730_SYNC_PIN;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(AD7730_SYNC_PORT, &GPIO_InitStruct);
 
-   /*Configure GPIO pin : SS_Pin */
-   GPIO_InitStruct.Pin = GPIO_PIN_1;
-   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-   GPIO_InitStruct.Pull = GPIO_NOPULL;
-   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+//  // ************ won't actually need these below
+//
+//  /*Configure GPIO pin : RDY_Pin */
+//   GPIO_InitStruct.Pin = GPIO_PIN_4;
+//   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+//   GPIO_InitStruct.Pull = GPIO_NOPULL;
+//   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+//
+//   /*Configure GPIO pin : SS_Pin */
+//   GPIO_InitStruct.Pin = GPIO_PIN_1;
+//   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+//   GPIO_InitStruct.Pull = GPIO_NOPULL;
+//   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+//   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
 }
 
@@ -238,11 +290,47 @@ static void MX_GPIO_Init(void)
   * @retval None
   */
 static void Init_Gauges(void){
-	gauge1.SS_GPIO_Port = GPIOC;
-	gauge1.RDY_GPIO_Port = GPIOC;
-	gauge1.SS_Pin = GPIO_PIN_1;
-	gauge1.RDY_Pin = GPIO_PIN_0;
+	HAL_GPIO_WritePin(AD7730_RESET_PORT, AD7730_RESET_PIN, 1); //hold /reset high in normal operation
+	//HAL_GPIO_WritePin(GPIOE, GPIO_PIN_15, GPIO_PIN_SET); //hold /reset high in normal operation
+	HAL_GPIO_WritePin(AD7730_SYNC_PORT, AD7730_SYNC_PIN, 1); //hold /sync high in normal operation
+
+//	gauge1.SS_GPIO_Port = GAUGE1_SS_PORT;
+//	gauge1.RDY_GPIO_Port = GAUGE1_RDY_PORT;
+//	gauge1.SS_Pin = GAUGE1_SS_PIN;
+//	gauge1.RDY_Pin = GAUGE1_RDY_PIN;
+//	AD7730_Init(gauge1);
+
+	gauge1.SS_GPIO_Port = GPIOE;
+	gauge1.RDY_GPIO_Port = GPIOE;
+	gauge1.SS_Pin = GPIO_PIN_9;
+	gauge1.RDY_Pin = GPIO_PIN_7;
 	AD7730_Init(gauge1);
+
+	gauge2.SS_GPIO_Port = GAUGE2_SS_PORT;
+	gauge2.RDY_GPIO_Port = GAUGE2_RDY_PORT;
+	gauge2.SS_Pin = GAUGE2_SS_PIN;
+	gauge2.RDY_Pin = GAUGE2_RDY_PIN;
+	AD7730_Init(gauge2);
+
+	gauge3.SS_GPIO_Port = GAUGE3_SS_PORT;
+	gauge3.RDY_GPIO_Port = GAUGE3_RDY_PORT;
+	gauge3.SS_Pin = GAUGE3_SS_PIN;
+	gauge3.RDY_Pin = GAUGE3_RDY_PIN;
+	AD7730_Init(gauge3);
+
+	gauge4.SS_GPIO_Port = GAUGE4_SS_PORT;
+	gauge4.RDY_GPIO_Port = GAUGE4_RDY_PORT;
+	gauge4.SS_Pin = GAUGE4_SS_PIN;
+	gauge4.RDY_Pin = GAUGE4_RDY_PIN;
+	AD7730_Init(gauge4);
+
+	AD7730_Reset();
+
+	AD7730_Config(gauge1); //config gauge with all pre-configured settings
+	AD7730_Config(gauge2); //config gauge with all pre-configured settings
+	AD7730_Config(gauge3); //config gauge with all pre-configured settings
+	AD7730_Config(gauge4); //config gauge with all pre-configured settings
+
 }
 
 
