@@ -1,5 +1,5 @@
-src/serial_terminal.o: ../src/serial_terminal.c \
- ../include/serial_terminal.h ../system/include/cmsis/stm32f4xx.h \
+src/serial_terminal.o: ../src/serial_terminal.c ../src/serial_terminal.h \
+ ../system/include/cmsis/stm32f4xx.h \
  ../system/include/cmsis/stm32f407xx.h ../system/include/cmsis/core_cm4.h \
  ../system/include/cmsis/core_cmInstr.h \
  ../system/include/cmsis/cmsis_gcc.h \
@@ -72,7 +72,7 @@ src/serial_terminal.o: ../src/serial_terminal.c \
  ../system/include/stm32f4-hal/stm32f4xx_hal_dfsdm.h \
  ../system/include/stm32f4-hal/stm32f4xx_hal_lptim.h ../include/CRC.h
 
-../include/serial_terminal.h:
+../src/serial_terminal.h:
 
 ../system/include/cmsis/stm32f4xx.h:
 

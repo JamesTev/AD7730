@@ -9,6 +9,8 @@
 #ifndef AD7730_H_
 #define AD7730_H_
 
+#define SYSTEM_CALIBRATION 1
+
 #define GAUGE1_RDY_PORT GPIOE
 #define GAUGE1_RDY_PIN	GPIO_PIN_7
 #define GAUGE1_SS_PORT GPIOE
@@ -108,11 +110,19 @@
 #define DACR_OFFSET_NONE 0x00
 
 //current settings
-#define CURRENT_MODE_1_SETTINGS (MR1_BU_BIPOLAR | MR1_WL_24_BIT)
-#define CURRENT_MODE_0_SETTINGS (MR0_HIREF_5V | MR0_RANGE_10MV | MR0_CHANNEL_1)
+#define CURRENT_MODE_1_SETTINGS_CAL (MR1_BU_BIPOLAR | MR1_WL_24_BIT)
+#define CURRENT_MODE_0_SETTINGS_CAL (MR0_HIREF_5V | MR0_RANGE_10MV | MR0_CHANNEL_1) //datasheet recommends calibrating with 80mV range regardless
+
+#define CURRENT_MODE_1_SETTINGS_READ (MR1_BU_BIPOLAR | MR1_WL_24_BIT)
+#define CURRENT_MODE_0_SETTINGS_READ (MR0_HIREF_5V | MR0_RANGE_10MV | MR0_CHANNEL_1)
 
 uint8_t spi_tx_buffer[3]; //only need to transfer at most 3 bytes during config
 uint8_t spi_rx_buffer[3];
+
+uint8_t gauge1_data_buffer[3];
+uint8_t gauge2_data_buffer[3];
+uint8_t gauge3_data_buffer[3];
+uint8_t gauge4_data_buffer[3]; //do we need to define these in a source file?
 
 typedef struct _ad7730
 {
@@ -123,16 +133,19 @@ typedef struct _ad7730
 
 } AD7730;
 
+
 void AD7730_Init(AD7730 gauge);
 void AD7730_Config(AD7730 gauge);
 void Tx_AD7730(uint16_t length, AD7730 gauge);
 void Rx_AD7730(uint16_t length, AD7730 gauge);
 void AD7730_start_cont_read(void);
-void AD7730_Read(AD7730 gauge);
+void AD7730_Read(AD7730 gauge, uint8_t * rx_buffer);
 void AD7730_Start_Cont_Read(AD7730 gauge);
-void AD7730_Read_Cont(AD7730 gauge);
+void AD7730_Read_Cont(AD7730 gauge, uint8_t * rx_buffer);
 void AD7730_Stop_Cont_Read(AD7730 gauge);
-int32_t AD7730_Process_Reading_Num(void);
-int32_t AD7730_Process_Reading_Percent(void);
+void AD7730_Reset(void);
+void delayUS(uint32_t us);
+int32_t AD7730_Process_Reading_Num(uint8_t * rx_buffer);
+float AD7730_Process_Reading_Percent(uint8_t * rx_buffer);
 
 #endif /* AD7730_H_ */

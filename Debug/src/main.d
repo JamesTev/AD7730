@@ -71,7 +71,8 @@ src/main.o: ../src/main.c ../include/main.h \
  ../system/include/stm32f4-hal/stm32f4xx_hal_spdifrx.h \
  ../system/include/stm32f4-hal/stm32f4xx_hal_dfsdm.h \
  ../system/include/stm32f4-hal/stm32f4xx_hal_lptim.h \
- ../include/serial_terminal.h ../include/CRC.h ../src/ad7730.h
+ ../src/serial_terminal.h ../include/CRC.h ../src/ad7730.h \
+ ../src/dma_circular.h ../src/opto_force.h
 
 ../include/main.h:
 
@@ -221,8 +222,12 @@ src/main.o: ../src/main.c ../include/main.h \
 
 ../system/include/stm32f4-hal/stm32f4xx_hal_lptim.h:
 
-../include/serial_terminal.h:
+../src/serial_terminal.h:
 
 ../include/CRC.h:
 
 ../src/ad7730.h:
+
+../src/dma_circular.h:
+
+../src/opto_force.h:

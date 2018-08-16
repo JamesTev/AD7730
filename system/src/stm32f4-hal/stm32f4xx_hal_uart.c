@@ -1933,16 +1933,19 @@ static void UART_SetConfig(UART_HandleTypeDef *huart)
     if((huart->Instance == USART1) || (huart->Instance == USART6))
     {
       huart->Instance->BRR = UART_BRR_SAMPLING16(HAL_RCC_GetPCLK2Freq(), huart->Init.BaudRate);
-      //huart->Instance->BRR = 0x1A4; //200 000
-      //huart->Instance->BRR = 0x1F8;
 
     }
     else
     {
       //huart->Instance->BRR = UART_BRR_SAMPLING16(HAL_RCC_GetPCLK1Freq(), huart->Init.BaudRate);
-      huart->Instance->BRR = 0x0E8;
+      if(huart->Instance == USART2){
+          huart->Instance->BRR = 0x054; //500 000 bps for SD card
+      }
+      else if(huart->Instance == USART3){
+    	  huart->Instance->BRR = 0x02A; //1Mbps baud for optoforce
+      }
 
-    }
+    } //end OV 8
   }
 }
 

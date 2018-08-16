@@ -4,27 +4,30 @@
 
 # Add inputs and outputs from these tool invocations to the build variables 
 C_SRCS += \
-../src/CRC.c \
 ../src/ad7730.c \
+../src/dma_circular.c \
 ../src/main.c \
+../src/opto_force.c \
 ../src/serial_terminal.c \
 ../src/stm32f4xx_hal_msp.c \
 ../src/stm32f4xx_it.c \
 ../src/tiny_printf.c 
 
 OBJS += \
-./src/CRC.o \
 ./src/ad7730.o \
+./src/dma_circular.o \
 ./src/main.o \
+./src/opto_force.o \
 ./src/serial_terminal.o \
 ./src/stm32f4xx_hal_msp.o \
 ./src/stm32f4xx_it.o \
 ./src/tiny_printf.o 
 
 C_DEPS += \
-./src/CRC.d \
 ./src/ad7730.d \
+./src/dma_circular.d \
 ./src/main.d \
+./src/opto_force.d \
 ./src/serial_terminal.d \
 ./src/stm32f4xx_hal_msp.d \
 ./src/stm32f4xx_it.d \
