@@ -9,7 +9,7 @@
 #ifndef AD7730_H_
 #define AD7730_H_
 
-#define SYSTEM_CALIBRATION 1
+#define SYSTEM_CALIBRATION 0
 
 #define GAUGE1_RDY_PORT GPIOE
 #define GAUGE1_RDY_PIN	GPIO_PIN_7

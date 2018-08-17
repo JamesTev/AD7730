@@ -20,7 +20,7 @@ void Config_OF(void){
 	HAL_GPIO_WritePin(LD5_GPIO_Port, LD5_Pin, 1);
 
 	uint8_t tx_config = HAL_UART_Transmit(&huart3, (uint8_t *)&OF_config, OF_config_buffer_size, 5000);
-	uint8_t rx_ack = HAL_UART_Receive_DMA(&huart3, ((uint8_t *)&ack_buffer), 7); //explicit casting to avoid compiler warnings
+	uint8_t rx_ack = HAL_UART_Receive_DMA(&huart3, (uint8_t *)&ack_buffer, 7); //explicit casting to avoid compiler warnings
 
 	if((tx_config | rx_ack) != HAL_OK){
 		_Error_Handler(__FILE__, __LINE__);

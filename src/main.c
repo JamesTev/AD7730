@@ -90,7 +90,7 @@ static volatile AD7730 gauge4;
 
 int32_t percent = 0;
 int32_t num = 0;
-int32_t readings[300];
+int32_t readings[510];
 uint32_t sample_counter = 0;
 uint32_t num_readings = 0;
 
@@ -101,6 +101,8 @@ uint8_t test_data[20];
 
 uint16_t start_readings = 0;
 uint16_t end_readings = 0;
+
+uint32_t attempts = 0;
 
 uint32_t tx_count = 0;
 
@@ -114,58 +116,89 @@ int main(void)
   HAL_Init();
   SystemClock_Config();
   MX_GPIO_Init();
-  MX_DMA_Init();
-  MX_USART3_UART_Init();
+
   MX_SPI2_Init();
   MX_USART2_UART_Init();
   MX_CRC_Init();
 
   //***************** Application Init Functions ******************
   Init_Gauges();
+
+//  //check if settings were stored - read filter reg:
+//  spi_tx_buffer[0] = CR_SINGLE_READ | CR_FILTER_REGISTER; //see if can just pass pointer to this as arg in function below
+//  Tx_AD7730(1, gauge1); //will this just discard data shifted into RX data register?
+//  Rx_AD7730(3, gauge1);
+//
+//  //check gain settings:
+//  spi_tx_buffer[0] = CR_SINGLE_READ | CR_GAIN_REGISTER; //see if can just pass pointer to this as arg in function below
+//  Tx_AD7730(1, gauge1); //will this just discard data shifted into RX data register?
+//  Rx_AD7730(3, gauge1);
+//
+//  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
+//  HAL_Delay(10);
+
+   MX_DMA_Init();
+   MX_USART3_UART_Init();
+
+  Config_OF(); //need to start continuous OF readings straight after
   Config_Idle_IRQ();
-
-  //check if settings were stored - read filter reg:
-  spi_tx_buffer[0] = CR_SINGLE_READ | CR_FILTER_REGISTER; //see if can just pass pointer to this as arg in function below
-  Tx_AD7730(1, gauge1); //will this just discard data shifted into RX data register?
-  Rx_AD7730(3, gauge1);
-
-  //check gain settings:
-  spi_tx_buffer[0] = CR_SINGLE_READ | CR_GAIN_REGISTER; //see if can just pass pointer to this as arg in function below
-  Tx_AD7730(1, gauge1); //will this just discard data shifted into RX data register?
-  Rx_AD7730(3, gauge1);
-
-  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
-  HAL_Delay(10);
+  while(!OF_Config_Complete); //wait until config has successfully complete
+  HAL_UART_Receive_DMA(&huart3, DMA_RX_Buffer, 16); //** start continuous readings
 
   Start_Cont_Readings();
+
   //************** Keep /sync and /reset pins high in normal operation
 
   while (1)
   {
-	  if(SampleFlag){
+//	  if(SampleFlag){ //might need to consider using timer for counting as first iteration might not have correct timing.
+//
+//		  num = AD7730_Process_Reading_Num((uint8_t *)&gauge1_data_buffer);
+//		  readings[count] = num;
+//		  Read_Gauges();
+//		  //no need to explicitly call read OF since DMA leaves result in buffer
+//
+//		  if(count < 500){
+//			  readings[count] = num;
+//		  }
+//		  else{
+//			  dir = dir*-1;
+//			  Stop_Cont_Readings();
+//			  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 1);
+//			  count=0;
+//		  }
+//		  SampleFlag = 0;
+//		  count++;
+//	  }
 
-		  num = AD7730_Process_Reading_Num((uint8_t *)&gauge1_data_buffer);
-		  readings[count] = num;
+	  if(num_readings > 1 && SampleFlag && (num_readings < 500)){ //num_readings > 1 to wait for first reading
+
+		  SampleFlag=RESET;
 		  Read_Gauges();
-		  //no need to explicitly call read OF since DMA leaves result in buffer
+		  num = AD7730_Process_Reading_Num((uint8_t *)&gauge1_data_buffer);
+		  readings[num_readings] = num;
+		  if(new_reading){
+			  readings_caught++;
+			  new_reading = 0;
+		  }
+	  }
 
-		  if(count < 300){
-			  readings[count] = num;
+	  if(num_readings == 500){
+		  HAL_UART_DMAStop(&huart3);
+		  end_readings = (DMA_RX_Buffer[4] <<8) | DMA_RX_Buffer[5];
+		  HAL_GPIO_TogglePin(LD4_GPIO_Port, LD4_Pin);
+		  if(Validate_OF_Data_Packet((uint8_t *)&DMA_RX_Buffer, OF_DATA_PACKET)!=OF_PACKET_VALID){
+			  HAL_GPIO_TogglePin(LD5_GPIO_Port, LD5_Pin);
+			  bad_readings++;
 		  }
-		  else{
-			  dir = dir*-1;
-			  Stop_Cont_Readings();
-			  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 1);
-			  count=0;
-		  }
-		  SampleFlag = 0;
-		  count++;
+		  // &(hdma_usart3_rx) ->Instance->CR &= ~DMA_SxCR_EN;            /* Stop DMA transfer */
 	  }
   }
   /* USER CODE END 3 */
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+	HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
 
 	if(huart->Instance==USART3){
 		/** OptoForce Data Rx Callback **/
@@ -173,7 +206,10 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 		num_readings++;
 		new_reading = 1;
 		if(num_readings == 1 && Validate_OF_Data_Packet((uint8_t *)&ack_buffer, OF_CONFIG_PACKET)!=OF_PACKET_VALID){
+			HAL_UART_DMAStop(&huart3);
+			attempts++;
 			Config_OF(); //need to try configure again if initial config fails
+			//__asm("BKPT");
 			num_readings = 0;
 			return;
 		}
@@ -280,10 +316,6 @@ static void Start_Cont_Readings(void){
 	AD7730_Start_Cont_Read(gauge2); //for continuous readings
 	AD7730_Start_Cont_Read(gauge3); //for continuous readings
 	AD7730_Start_Cont_Read(gauge4); //for continuous readings
-
-	//might need to config OF before starting AD7730 cont readings in case config fails and need to retry
-	Config_OF(); //need to start continuous OF readings straight after
-	Start_OF_Cont_Readings();
 }
 
 static void Stop_Cont_Readings(void){
@@ -296,6 +328,9 @@ static void Stop_Cont_Readings(void){
 }
 
 static void Start_OF_Cont_Readings(void){
+	Config_OF(); //need to start continuous OF readings straight after
+
+	Config_Idle_IRQ();
 	HAL_UART_Receive_DMA (&huart3, DMA_RX_Buffer, 16); //** start continuous readings
 }
 
@@ -384,7 +419,6 @@ static void MX_SPI2_Init(void)
 /* USART2 init function */
 static void MX_USART2_UART_Init(void)
 {
-
   huart2.Instance = USART2;
   huart2.Init.BaudRate = 500000; //this is changed manually to 500 000 in hal_uart.c
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
@@ -429,11 +463,11 @@ static void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Stream1_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0); //USART3 RX
+  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 1, 0); //USART3 RX
   HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
   /* DMA1_Stream6_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0); //USART2 TX
-  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
+ // HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0); //USART2 TX
+  //HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
 
 }
 
