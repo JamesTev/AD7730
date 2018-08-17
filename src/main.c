@@ -59,7 +59,7 @@ DMA_HandleTypeDef hdma_usart3_rx;
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
-__IO ITStatus UartTxReady = 0;
+__IO ITStatus UartTxReady = SET;
 __IO ITStatus SampleFlag = SET;
 
 //uint8_t ulReceivedValue[COMMS_TX_BUFFER_SIZE+2]; //if including opcode for first 2 bytes
@@ -116,7 +116,7 @@ int main(void)
   HAL_Init();
   SystemClock_Config();
   MX_GPIO_Init();
-
+  MX_DMA_Init();
   MX_SPI2_Init();
   MX_USART2_UART_Init();
   MX_CRC_Init();
@@ -137,7 +137,6 @@ int main(void)
 //  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
 //  HAL_Delay(10);
 
-   MX_DMA_Init();
    MX_USART3_UART_Init();
 
   Config_OF(); //need to start continuous OF readings straight after
@@ -146,6 +145,7 @@ int main(void)
   HAL_UART_Receive_DMA(&huart3, DMA_RX_Buffer, 16); //** start continuous readings
 
   Start_Cont_Readings();
+  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
 
   //************** Keep /sync and /reset pins high in normal operation
 
@@ -171,38 +171,67 @@ int main(void)
 //		  count++;
 //	  }
 
-	  if(num_readings > 1 && SampleFlag && (num_readings < 500)){ //num_readings > 1 to wait for first reading
+//	  if(num_readings > 1 && SampleFlag && (readings_caught < 500)){ //num_readings > 1 to wait for first reading
+//
+//		  if(new_reading){
+//			  SampleFlag=RESET;
+//			  Read_Gauges();
+//			  num = AD7730_Process_Reading_Num((uint8_t *)&gauge1_data_buffer);
+//			  readings[readings_caught] = num;
+//
+//			  readings_caught++;
+//			  new_reading = 0;
+//			  Prepare_Data(); //packetisation and CRC
+//			  while(!UartTxReady);
+//			  if(HAL_UART_Transmit_DMA(&huart2, (uint8_t*)ulReceivedValue, COMMS_TX_BUFFER_SIZE)!= HAL_OK) //COMMS_TX_BUFFER_SIZE
+//			  {
+//				  _Error_Handler(__FILE__, __LINE__);
+//			  }
+//			  UartTxReady = 0;
+//		  }
+//	  }
+//
+//	  if(readings_caught == 500){
+//		  //Stop_Cont_Readings();
+//		  readings_caught = 0;
+//		  end_readings = (DMA_RX_Buffer[4] <<8) | DMA_RX_Buffer[5];
+//		  HAL_GPIO_TogglePin(LD6_GPIO_Port, LD6_Pin);
+//		  // &(hdma_usart3_rx) ->Instance->CR &= ~DMA_SxCR_EN;            /* Stop DMA transfer */
+//	  }
 
-		  SampleFlag=RESET;
+	  if(SampleFlag && new_reading){
+
 		  Read_Gauges();
 		  num = AD7730_Process_Reading_Num((uint8_t *)&gauge1_data_buffer);
-		  readings[num_readings] = num;
-		  if(new_reading){
-			  readings_caught++;
-			  new_reading = 0;
-		  }
-	  }
+		  readings[readings_caught] = num;
 
-	  if(num_readings == 500){
-		  HAL_UART_DMAStop(&huart3);
-		  end_readings = (DMA_RX_Buffer[4] <<8) | DMA_RX_Buffer[5];
-		  HAL_GPIO_TogglePin(LD4_GPIO_Port, LD4_Pin);
-		  if(Validate_OF_Data_Packet((uint8_t *)&DMA_RX_Buffer, OF_DATA_PACKET)!=OF_PACKET_VALID){
-			  HAL_GPIO_TogglePin(LD5_GPIO_Port, LD5_Pin);
-			  bad_readings++;
+		  readings_caught++;
+		  new_reading = 0;
+
+		  Prepare_Data();
+		  if(HAL_UART_Transmit_DMA(&huart2, (uint8_t*)ulReceivedValue, COMMS_TX_BUFFER_SIZE)!= HAL_OK) //COMMS_TX_BUFFER_SIZE
+		  {
+			  _Error_Handler(__FILE__, __LINE__);
 		  }
-		  // &(hdma_usart3_rx) ->Instance->CR &= ~DMA_SxCR_EN;            /* Stop DMA transfer */
+
+		  if(readings_caught == 500){
+			  //Stop_Cont_Readings();
+			  readings_caught = 0;
+			  //end_readings = (DMA_RX_Buffer[4] <<8) | DMA_RX_Buffer[5];
+			  HAL_GPIO_TogglePin(LD6_GPIO_Port, LD6_Pin);
+			  // &(hdma_usart3_rx) ->Instance->CR &= ~DMA_SxCR_EN;            /* Stop DMA transfer */
+		  }
+		  UartTxReady = 0;
+		  SampleFlag = 0;
 	  }
   }
   /* USER CODE END 3 */
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
-	HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
 
 	if(huart->Instance==USART3){
 		/** OptoForce Data Rx Callback **/
-		HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
 		num_readings++;
 		new_reading = 1;
 		if(num_readings == 1 && Validate_OF_Data_Packet((uint8_t *)&ack_buffer, OF_CONFIG_PACKET)!=OF_PACKET_VALID){
@@ -228,7 +257,6 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 	else if(huart->Instance==USART2){
 		/** SD Card Data Tx Callback **/
 		UartTxReady = SET;
-		HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
 		tx_count++;
 	}
 }
@@ -256,33 +284,37 @@ static void Prepare_Data(void){
 
 	uint8_t tempData[32];
 
-	Extract_Gauge_Data(gauge1_data_buffer, tempData, 0);
-	Extract_Gauge_Data(gauge2_data_buffer, tempData, 3);
-	Extract_Gauge_Data(gauge3_data_buffer, tempData, 6);
-	Extract_Gauge_Data(gauge4_data_buffer, tempData, 9); //TODO: improve this method
+//	Extract_Gauge_Data(gauge1_data_buffer, tempData, 0);
+//	Extract_Gauge_Data(gauge2_data_buffer, tempData, 3);
+//	Extract_Gauge_Data(gauge3_data_buffer, tempData, 6);
+//	Extract_Gauge_Data(gauge4_data_buffer, tempData, 9); //TODO: improve this method
+//
+//	/*
+//	 * Place Fx, Fy and Fz half-words from Optoforce straight after 12 AD7730 bytes.
+//	 * These 6 bytes are at byte positions 8-13 in OF packet
+//	 */
+//	for(uint8_t i = 0; i < 6; i++){
+//		tempData[12+i] = DMA_RX_Buffer[8+i];
+//	}
+//
+//	/*
+//	 * Get x and y pos from switch array. Setting to ASCII 36 ($ sign) for
+//	 * testing
+//	 */
+//	uint8_t pos_x = 36;
+//	uint8_t pos_y = 36;
+//	tempData[18] = pos_x;
+//	tempData[19] = pos_y;
+//
+//	/*
+//	 * Transmit reading number (2 bytes) from OF
+//	 */
+//	tempData[20] = DMA_RX_Buffer[4];
+//	tempData[21] = DMA_RX_Buffer[5];
 
-	/*
-	 * Place Fx, Fy and Fz half-words from Optoforce straight after 12 AD7730 bytes.
-	 * These 6 bytes are at byte positions 8-13 in OF packet
-	 */
-	for(uint8_t i = 0; i < 6; i++){
-		tempData[12+i] = DMA_RX_Buffer[8+i];
+	for(uint8_t i = 0; i < 16; i++){
+		tempData[i] = 65; //ASCII A for testing
 	}
-
-	/*
-	 * Get x and y pos from switch array. Setting to ASCII 36 ($ sign) for
-	 * testing
-	 */
-	uint8_t pos_x = 36;
-	uint8_t pos_y = 36;
-	tempData[18] = pos_x;
-	tempData[19] = pos_y;
-
-	/*
-	 * Transmit reading number (2 bytes) from OF
-	 */
-	tempData[20] = DMA_RX_Buffer[4];
-	tempData[21] = DMA_RX_Buffer[5];
 
 	CommsTask_TransmitPacketStruct data=serialTerminal_packetize(tempData,sizeof(tempData)); //packetize into packet of bytes
 	int i=0;
@@ -466,8 +498,8 @@ static void MX_DMA_Init(void)
   HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 1, 0); //USART3 RX
   HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
   /* DMA1_Stream6_IRQn interrupt configuration */
- // HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0); //USART2 TX
-  //HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
+  HAL_NVIC_SetPriority(DMA1_Stream6_IRQn, 0, 0); //USART2 TX
+  HAL_NVIC_EnableIRQ(DMA1_Stream6_IRQn);
 
 }
 
@@ -582,7 +614,7 @@ static void Init_Gauges(void){
   */
 void _Error_Handler(char *file, int line)
 {
-  /* USER CODE BEGIN Error_Handler_Debug */
+  __asm("BKPT");
   /* User can add his own implementation to report the HAL error return state */
   while(1)
   {

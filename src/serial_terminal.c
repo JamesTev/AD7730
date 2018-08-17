@@ -50,28 +50,28 @@ CommsTask_TransmitPacketStruct serialTerminal_packetize(uint8_t* payload_to_pack
   /*
    * Generate 32 bit CRC using hardware CRC generator. Exclude start char (~) from CRC source so start from second element
    */
-  crcCalculated = HAL_CRC_Calculate(&hcrc, (uint8_t *)&pkt_to_tx.data[1], packet_data_pointer - 1); //generator poly 0x4C11DB7
-  //crcCalculated = (uint16_t) crcCalc(payload_to_pack, 0, length_of_payload);
-
-  //put CRC
-  for (raw_data_pointer = 0; raw_data_pointer < 4; raw_data_pointer++, packet_data_pointer++)
-  {
-    char_to_pack = (uint8_t) ((crcCalculated >> 8 * (3 - raw_data_pointer)) & 0x00FF);
-    if (char_to_pack == 0x7E)
-    {
-      pkt_to_tx.data[packet_data_pointer++] = 0x7D;
-      pkt_to_tx.data[packet_data_pointer] = 0x5E;
-    }
-    else if (char_to_pack == 0x7D)
-    {
-      pkt_to_tx.data[packet_data_pointer++] = 0x7D;
-      pkt_to_tx.data[packet_data_pointer] = 0x5D;
-    }
-    else
-    {
-      pkt_to_tx.data[packet_data_pointer] = char_to_pack;
-    }
-  }
+//  crcCalculated = HAL_CRC_Calculate(&hcrc, (uint8_t *)&pkt_to_tx.data[1], packet_data_pointer - 1); //generator poly 0x4C11DB7
+//  //crcCalculated = (uint16_t) crcCalc(payload_to_pack, 0, length_of_payload);
+//
+//  //put CRC
+//  for (raw_data_pointer = 0; raw_data_pointer < 4; raw_data_pointer++, packet_data_pointer++)
+//  {
+//    char_to_pack = (uint8_t) ((crcCalculated >> 8 * (3 - raw_data_pointer)) & 0x00FF);
+//    if (char_to_pack == 0x7E)
+//    {
+//      pkt_to_tx.data[packet_data_pointer++] = 0x7D;
+//      pkt_to_tx.data[packet_data_pointer] = 0x5E;
+//    }
+//    else if (char_to_pack == 0x7D)
+//    {
+//      pkt_to_tx.data[packet_data_pointer++] = 0x7D;
+//      pkt_to_tx.data[packet_data_pointer] = 0x5D;
+//    }
+//    else
+//    {
+//      pkt_to_tx.data[packet_data_pointer] = char_to_pack;
+//    }
+//  }
 
   //put end char
   pkt_to_tx.data[packet_data_pointer++] = 0x7E;

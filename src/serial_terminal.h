@@ -15,7 +15,7 @@
 #include <stdlib.h>
 #include "CRC.h"
 
-#define COMMS_TX_BUFFER_SIZE 30
+#define COMMS_TX_BUFFER_SIZE 28
 
 typedef struct {
   uint8_t data[COMMS_TX_BUFFER_SIZE - 2];
