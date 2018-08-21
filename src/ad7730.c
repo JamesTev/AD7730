@@ -10,10 +10,10 @@
 #include "main.h"
 
 extern SPI_HandleTypeDef hspi2;
-extern uint8_t gauge1_data_buffer[3];
-extern uint8_t gauge2_data_buffer[3];
-extern uint8_t gauge3_data_buffer[3];
-extern uint8_t gauge4_data_buffer[3]; //do we need to define these in a source file?
+extern volatile uint8_t gauge1_data_buffer[3];
+extern volatile uint8_t gauge2_data_buffer[3];
+extern volatile uint8_t gauge3_data_buffer[3];
+extern volatile uint8_t gauge4_data_buffer[3]; //do we need to define these in a source file?
 
 __IO ITStatus CONT_READ_STARTED = RESET;
 
@@ -48,11 +48,16 @@ void AD7730_Config(AD7730 gauge){
 	spi_tx_buffer[0] = CR_SINGLE_WRITE|CR_FILTER_REGISTER; //see if can just pass pointer to this as arg in function below
 	Tx_AD7730(1, gauge); //will this just discard data shifted into RX data register?
 
-	//spi_tx_buffer[0] = FR2_SINC_AVERAGING_256;
-	spi_tx_buffer[0] = 0x13; //first bits of SF for SF word as 311 (1kHz)
-	//spi_tx_buffer[1] = FR1_SKIP_OFF|FR1_FAST_ON;
-	spi_tx_buffer[1] = 0x71;
-	spi_tx_buffer[2] = FR0_CHOP_OFF;
+	//************** TESTING: CHANGING THESE SETTINGS (use max averages for calibration then change)
+
+	spi_tx_buffer[0] = FR2_SINC_AVERAGING_2048;
+	//spi_tx_buffer[0] = 0x13; //first bits of SF for SF word as 311 (1kHz)
+	//spi_tx_buffer[0] = 0x26; //first bits of SF for SF word as 623 (500Hz)
+
+	spi_tx_buffer[1] = FR1_SKIP_OFF|FR1_FAST_OFF;
+	//spi_tx_buffer[1] = 0x71; //bottom bits for 1kHz (SF word 311)
+	//spi_tx_buffer[1] = 0xF0; //bottom bits for 500Hz (SF word 623) with FastMode OFF
+	spi_tx_buffer[2] = FR0_CHOP_OFF; //******** CHANGE TO OFF IN NORMAL MODE
 	Tx_AD7730(3, gauge); //will this just discard data shifted into RX data register?
 
 	//check if settings were stored - read filter reg:
@@ -109,6 +114,26 @@ void AD7730_Config(AD7730 gauge){
 		while(HAL_GPIO_ReadPin(gauge.RDY_GPIO_Port, gauge.RDY_Pin) != GPIO_PIN_RESET); //wait for ready pin to go low after calibration
 	}
 
+	//-------------- Filter Config for Read Operations (calibration complete) -----------------------
+	  	spi_tx_buffer[0] = CR_SINGLE_WRITE|CR_FILTER_REGISTER; //see if can just pass pointer to this as arg in function below
+	  	Tx_AD7730(1, gauge); //will this just discard data shifted into RX data register?
+
+	  	//************** TESTING: CHANGING THESE SETTINGS
+
+	  	//spi_tx_buffer[0] = FR2_SINC_AVERAGING_512;
+	  	//spi_tx_buffer[0] = 0x13; //first bits of SF for SF word as 311 (1kHz)
+	  	spi_tx_buffer[0] = 0x26; //first bits of SF for SF word as 623 (500Hz)
+
+	  	//spi_tx_buffer[1] = FR1_SKIP_OFF|FR1_FAST_OFF;
+	  	//spi_tx_buffer[1] = 0x71; //bottom bits for 1kHz (SF word 311)
+	  	spi_tx_buffer[1] = 0xF0; //bottom bits for 500Hz (SF word 623) with FastMode OFF
+	  	spi_tx_buffer[2] = FR0_CHOP_OFF; //******** CHANGE TO OFF IN NORMAL MODE
+	  	Tx_AD7730(3, gauge); //will this just discard data shifted into RX data register?
+
+	//  //check if settings were stored - read filter reg:
+	  spi_tx_buffer[0] = CR_SINGLE_READ | CR_FILTER_REGISTER; //see if can just pass pointer to this as arg in function below
+	  Tx_AD7730(1, gauge); //will this just discard data shifted into RX data register?
+	  Rx_AD7730(3, gauge);
 }
 
 /*
@@ -211,7 +236,11 @@ void AD7730_Stop_Cont_Read(AD7730 gauge){
 int32_t AD7730_Process_Reading_Num(uint8_t * rx_buffer){
 	uint32_t filler =0;
 	uint32_t result = filler | ((rx_buffer[0] << 16) | (rx_buffer[1] << 8) | rx_buffer[2]);
-	return result - 0x800000; //so that 0 will no longer be 100..00 but actually 0
+	result = result - 0x800000; //so that 0 will no longer be 100..00 but actually 0
+	if(DIFFERENTIAL_POLARITY_SWITCH){
+		result *= -1;
+	}
+	return result;
 }
 
 /*
@@ -222,7 +251,8 @@ int32_t AD7730_Process_Reading_Num(uint8_t * rx_buffer){
  */
 float AD7730_Process_Reading_Percent(uint8_t * rx_buffer){
 	int32_t reading = AD7730_Process_Reading_Num(rx_buffer);
-	return (reading/0x7FFFFF) * 100; //divide by max full scale voltage
+	float x = (float)reading;
+	return (x/(float)0x7FFFFF) * 100; //divide by max full scale voltage
 }
 
 void AD7730_Reset(void){

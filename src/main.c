@@ -81,23 +81,26 @@ static void Start_Cont_Readings(void); //starts reading both OF and 4xAD7730
 static void Stop_Cont_Readings(void);
 static void Read_Gauges(void);
 static void Prepare_Data(void);
-static void Extract_Gauge_Data(uint8_t * source_buffer, uint8_t * dest_buffer, uint8_t offset);
+static void Extract_Gauge_Data(volatile uint8_t * source_buffer, uint8_t * dest_buffer, uint8_t offset);
 
 static volatile AD7730 gauge1;
 static volatile AD7730 gauge2;
 static volatile AD7730 gauge3;
 static volatile AD7730 gauge4;
 
-int32_t percent = 0;
-int32_t num = 0;
-int32_t readings[510];
+float percent3 = 0;
+float percent2 = 0;
+int32_t num3 = 0;
+int32_t num2 = 0;
+
+float readings1[510];
+float readings2[510];
 uint32_t sample_counter = 0;
 uint32_t num_readings = 0;
 
 uint32_t bad_readings = 0;
 uint32_t readings_caught = 0;
 uint8_t new_reading = 1;
-uint8_t test_data[20];
 
 uint16_t start_readings = 0;
 uint16_t end_readings = 0;
@@ -105,10 +108,10 @@ uint16_t end_readings = 0;
 uint32_t attempts = 0;
 
 uint32_t tx_count = 0;
-
+uint32_t time_ms = 0;
 uint32_t count = 0;
 int8_t dir = 1;
-uint32_t tim_count=0;
+
 
 int main(void)
 {
@@ -123,88 +126,88 @@ int main(void)
 
   //***************** Application Init Functions ******************
   Init_Gauges();
+  //-------------- Filter Config for Read Operations (calibration complete) -----------------------
+  	spi_tx_buffer[0] = CR_SINGLE_WRITE|CR_FILTER_REGISTER; //see if can just pass pointer to this as arg in function below
+  	Tx_AD7730(1, gauge3); //will this just discard data shifted into RX data register?
+
+  	//************** TESTING: CHANGING THESE SETTINGS
+
+  	//spi_tx_buffer[0] = FR2_SINC_AVERAGING_512;
+  	//spi_tx_buffer[0] = 0x13; //first bits of SF for SF word as 311 (1kHz)
+  	spi_tx_buffer[0] = 0x26; //first bits of SF for SF word as 623 (500Hz)
+
+  	//spi_tx_buffer[1] = FR1_SKIP_OFF|FR1_FAST_OFF;
+  	//spi_tx_buffer[1] = 0x71; //bottom bits for 1kHz (SF word 311)
+  	spi_tx_buffer[1] = 0xF0; //bottom bits for 500Hz (SF word 623) with FastMode OFF
+  	spi_tx_buffer[2] = FR0_CHOP_OFF; //******** CHANGE TO OFF IN NORMAL MODE
+  	Tx_AD7730(3, gauge3); //will this just discard data shifted into RX data register?
 
 //  //check if settings were stored - read filter reg:
-//  spi_tx_buffer[0] = CR_SINGLE_READ | CR_FILTER_REGISTER; //see if can just pass pointer to this as arg in function below
-//  Tx_AD7730(1, gauge1); //will this just discard data shifted into RX data register?
-//  Rx_AD7730(3, gauge1);
-//
-//  //check gain settings:
-//  spi_tx_buffer[0] = CR_SINGLE_READ | CR_GAIN_REGISTER; //see if can just pass pointer to this as arg in function below
-//  Tx_AD7730(1, gauge1); //will this just discard data shifted into RX data register?
-//  Rx_AD7730(3, gauge1);
-//
-//  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
-//  HAL_Delay(10);
+  spi_tx_buffer[0] = CR_SINGLE_READ | CR_FILTER_REGISTER; //see if can just pass pointer to this as arg in function below
+  Tx_AD7730(1, gauge3); //will this just discard data shifted into RX data register?
+  Rx_AD7730(3, gauge3);
+
+  //************** TESTING: Manually setting gain settings
+
+  spi_tx_buffer[0] = CR_SINGLE_WRITE | CR_GAIN_REGISTER;
+  Tx_AD7730(1, gauge2); //will this just discard data shifted into RX data register?
+
+  spi_tx_buffer[0] = 200; //first bits of SF for SF word as 623 (500Hz)
+  spi_tx_buffer[1] = 0; //bottom bits for 500Hz (SF word 623)
+  spi_tx_buffer[2] = 0; //******** CHANGE TO OFF IN NORMAL MODE
+  Tx_AD7730(3, gauge2); //will this just discard data shifted into RX data register?
+
+  spi_tx_buffer[0] = CR_SINGLE_WRITE | CR_GAIN_REGISTER;
+  Tx_AD7730(1, gauge3); //will this just discard data shifted into RX data register?
+
+  spi_tx_buffer[0] = 200; //first bits of SF for SF word as 623 (500Hz)
+  spi_tx_buffer[1] = 0; //bottom bits for 500Hz (SF word 623)
+  spi_tx_buffer[2] = 0; //******** CHANGE TO OFF IN NORMAL MODE
+  Tx_AD7730(3, gauge3); //will this just discard data shifted into RX data register?
+
+  //check gain settings:
+  spi_tx_buffer[0] = CR_SINGLE_READ | CR_GAIN_REGISTER; //see if can just pass pointer to this as arg in function below
+  Tx_AD7730(1, gauge2); //will this just discard data shifted into RX data register?
+  Rx_AD7730(3, gauge2);
+
+  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
+
+  spi_tx_buffer[0] = CR_SINGLE_READ | CR_GAIN_REGISTER; //see if can just pass pointer to this as arg in function below
+  Tx_AD7730(1, gauge3); //will this just discard data shifted into RX data register?
+  Rx_AD7730(3, gauge3);
+
+  spi_tx_buffer[0] = CR_SINGLE_READ | CR_OFFSET_REGISTER; //see if can just pass pointer to this as arg in function below
+  Tx_AD7730(1, gauge2); //will this just discard data shifted into RX data register?
+  Rx_AD7730(3, gauge2);
+
+  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
+  HAL_Delay(10);
 
    MX_USART3_UART_Init();
 
-  Config_OF(); //need to start continuous OF readings straight after
-  Config_Idle_IRQ();
-  while(!OF_Config_Complete); //wait until config has successfully complete
-  HAL_UART_Receive_DMA(&huart3, DMA_RX_Buffer, 16); //** start continuous readings
-
-  Start_Cont_Readings();
-  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
+   //uncomment from here ********
+//  Config_OF(); //need to start continuous OF readings straight after
+//  Config_Idle_IRQ();
+//  while(!OF_Config_Complete); //wait until config has successfully complete
+//  HAL_UART_Receive_DMA(&huart3, DMA_RX_Buffer, 16); //** start continuous readings
+//
+//  Start_Cont_Readings();
+//  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
+   //uncomment to here ********
 
   //************** Keep /sync and /reset pins high in normal operation
 
+   AD7730_Start_Cont_Read(gauge2); //for continuous readings
+   AD7730_Start_Cont_Read(gauge3); //for continuous readings
+
+   //***** NOTE: SampleFlag now running at 500Hz!
+   time_ms=0;
   while (1)
   {
-//	  if(SampleFlag){ //might need to consider using timer for counting as first iteration might not have correct timing.
-//
-//		  num = AD7730_Process_Reading_Num((uint8_t *)&gauge1_data_buffer);
-//		  readings[count] = num;
-//		  Read_Gauges();
-//		  //no need to explicitly call read OF since DMA leaves result in buffer
-//
-//		  if(count < 500){
-//			  readings[count] = num;
-//		  }
-//		  else{
-//			  dir = dir*-1;
-//			  Stop_Cont_Readings();
-//			  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 1);
-//			  count=0;
-//		  }
-//		  SampleFlag = 0;
-//		  count++;
-//	  }
-
-//	  if(num_readings > 1 && SampleFlag && (readings_caught < 500)){ //num_readings > 1 to wait for first reading
-//
-//		  if(new_reading){
-//			  SampleFlag=RESET;
-//			  Read_Gauges();
-//			  num = AD7730_Process_Reading_Num((uint8_t *)&gauge1_data_buffer);
-//			  readings[readings_caught] = num;
-//
-//			  readings_caught++;
-//			  new_reading = 0;
-//			  Prepare_Data(); //packetisation and CRC
-//			  while(!UartTxReady);
-//			  if(HAL_UART_Transmit_DMA(&huart2, (uint8_t*)ulReceivedValue, COMMS_TX_BUFFER_SIZE)!= HAL_OK) //COMMS_TX_BUFFER_SIZE
-//			  {
-//				  _Error_Handler(__FILE__, __LINE__);
-//			  }
-//			  UartTxReady = 0;
-//		  }
-//	  }
-//
-//	  if(readings_caught == 500){
-//		  //Stop_Cont_Readings();
-//		  readings_caught = 0;
-//		  end_readings = (DMA_RX_Buffer[4] <<8) | DMA_RX_Buffer[5];
-//		  HAL_GPIO_TogglePin(LD6_GPIO_Port, LD6_Pin);
-//		  // &(hdma_usart3_rx) ->Instance->CR &= ~DMA_SxCR_EN;            /* Stop DMA transfer */
-//	  }
-
-	  if(SampleFlag && new_reading){
+	  if(0 && SampleFlag && new_reading){ //&& new_reading
 
 		  Read_Gauges();
-		  num = AD7730_Process_Reading_Num((uint8_t *)&gauge1_data_buffer);
-		  readings[readings_caught] = num;
-
+		  //num = AD7730_Process_Reading_Num((uint8_t *)&gauge1_data_buffer);
 		  readings_caught++;
 		  new_reading = 0;
 
@@ -214,16 +217,49 @@ int main(void)
 			  _Error_Handler(__FILE__, __LINE__);
 		  }
 
-		  if(readings_caught == 500){
-			  //Stop_Cont_Readings();
-			  readings_caught = 0;
-			  //end_readings = (DMA_RX_Buffer[4] <<8) | DMA_RX_Buffer[5];
+		  if(readings_caught%100 == 0){
+
 			  HAL_GPIO_TogglePin(LD6_GPIO_Port, LD6_Pin);
 			  // &(hdma_usart3_rx) ->Instance->CR &= ~DMA_SxCR_EN;            /* Stop DMA transfer */
 		  }
 		  UartTxReady = 0;
 		  SampleFlag = 0;
 	  }
+
+	  if(SampleFlag && count < 500){
+		  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
+		  //while(HAL_GPIO_ReadPin(gauge1.RDY_GPIO_Port, gauge1.RDY_Pin) != GPIO_PIN_RESET); //wait for ready pin to go low
+		  //HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 1);
+//		  AD7730_Read(gauge3, (uint8_t *)&gauge3_data_buffer);
+//		  AD7730_Read(gauge2, (uint8_t *)&gauge2_data_buffer);
+
+		  AD7730_Read_Cont(gauge2, (uint8_t *)&gauge2_data_buffer);
+		  AD7730_Read_Cont(gauge3, (uint8_t *)&gauge3_data_buffer);
+
+		  percent3 = AD7730_Process_Reading_Percent((uint8_t *)&gauge3_data_buffer); //note: might need to consider not using floats in actual loop
+		  num3 = AD7730_Process_Reading_Num((uint8_t *)&gauge3_data_buffer);
+
+		  percent2 = AD7730_Process_Reading_Percent((uint8_t *)&gauge2_data_buffer);
+		  num2 = AD7730_Process_Reading_Num((uint8_t *)&gauge2_data_buffer);
+		  readings1[count] = percent3;
+		  readings2[count] = percent2;
+		  count++;
+		  SampleFlag = 0;
+	  }
+	  else if(count >= 500){
+		  //AD7730_Stop_Cont_Read(gauge2); //for continuous readings
+		  //AD7730_Stop_Cont_Read(gauge3); //for continuous readings
+		  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 1);
+
+		  if(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == 1){
+			  count=0;
+			  //AD7730_Start_Cont_Read(gauge2); //for continuous readings
+			  //AD7730_Start_Cont_Read(gauge3); //for continuous readings
+		  }
+	  }
+
+
+
   }
   /* USER CODE END 3 */
 }
@@ -274,47 +310,80 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 
 void HAL_SYSTICK_Callback(void){
 	sample_counter++;
-	if(sample_counter==1){
+	//********** SAMPLE COUNTER CHANGED
+	if(sample_counter==2){
 		SampleFlag = SET;
 		sample_counter = 0;
+	}
+
+	if(1 || readings_caught > 0){
+		time_ms++;
 	}
 }
 
 static void Prepare_Data(void){
 
-	uint8_t tempData[32];
+	uint8_t tempData[28]; //change this to correct number of data bytes!
 
-//	Extract_Gauge_Data(gauge1_data_buffer, tempData, 0);
-//	Extract_Gauge_Data(gauge2_data_buffer, tempData, 3);
-//	Extract_Gauge_Data(gauge3_data_buffer, tempData, 6);
-//	Extract_Gauge_Data(gauge4_data_buffer, tempData, 9); //TODO: improve this method
-//
-//	/*
-//	 * Place Fx, Fy and Fz half-words from Optoforce straight after 12 AD7730 bytes.
-//	 * These 6 bytes are at byte positions 8-13 in OF packet
-//	 */
-//	for(uint8_t i = 0; i < 6; i++){
-//		tempData[12+i] = DMA_RX_Buffer[8+i];
-//	}
-//
-//	/*
-//	 * Get x and y pos from switch array. Setting to ASCII 36 ($ sign) for
-//	 * testing
-//	 */
-//	uint8_t pos_x = 36;
-//	uint8_t pos_y = 36;
-//	tempData[18] = pos_x;
-//	tempData[19] = pos_y;
-//
-//	/*
-//	 * Transmit reading number (2 bytes) from OF
-//	 */
-//	tempData[20] = DMA_RX_Buffer[4];
-//	tempData[21] = DMA_RX_Buffer[5];
+	union{
+		uint32_t i[6];
+		uint8_t j[24]; //will be used to split 4x 32 bit numbers into 16 consecutive bytes
+	}tempUnion;
 
-	for(uint8_t i = 0; i < 16; i++){
-		tempData[i] = 65; //ASCII A for testing
+	Extract_Gauge_Data(gauge1_data_buffer, tempData, 0);
+	Extract_Gauge_Data(gauge2_data_buffer, tempData, 3);
+	Extract_Gauge_Data(gauge3_data_buffer, tempData, 6);
+	Extract_Gauge_Data(gauge4_data_buffer, tempData, 9); //TODO: improve this method
+
+	/*
+	 * Place Fx, Fy and Fz half-words from Optoforce straight after 12 AD7730 bytes.
+	 * These 6 bytes are at byte positions 8-13 in OF packet
+	 */
+	for(uint8_t i = 0; i < 6; i++){
+		tempData[12+i] = DMA_RX_Buffer[8+i];
 	}
+
+	/*
+	 * Get x and y pos from switch array. Setting to ASCII 36 ($ sign) for
+	 * testing
+	 */
+	uint8_t pos_x = 36;
+	uint8_t pos_y = 36;
+	tempData[18] = pos_x;
+	tempData[19] = pos_y;
+
+	/*
+	 * Transmit reading number (2 bytes) from OF
+	 */
+	tempData[20] = DMA_RX_Buffer[4];
+	tempData[21] = DMA_RX_Buffer[5];
+
+	tempData[22] = 0; //dummy bytes to pad data packet to 24 bytes for CRC calculation
+	tempData[23] = 0;
+
+
+
+	uint8_t len = sizeof(tempUnion.j);
+
+	for(uint8_t i=0; i < len; i++){
+		tempUnion.j[len-i-1] = tempData[i];
+	}
+	reverseArray(tempUnion.i, 2);
+
+	/*
+	 * Generate 32 bit CRC using hardware CRC generator. Exclude start char (~) from CRC source so start from second element
+	 */
+	 //crcCalculated = HAL_CRC_Calculate(&hcrc, (uint8_t *)&pkt_to_tx.data[1], packet_data_pointer - 1); //generator poly 0x4C11DB7
+
+//	for(uint8_t i = 0; i < 22; i++){
+//		if(i%2==0){
+//			tempData[i] = 65; //ASCII A for testing
+//			continue;
+//		}
+//		tempData[i] = 66; //ASCII A for testing
+//	}
+
+	//assign CRC bytes to datapacket here ************
 
 	CommsTask_TransmitPacketStruct data=serialTerminal_packetize(tempData,sizeof(tempData)); //packetize into packet of bytes
 	int i=0;
@@ -329,7 +398,7 @@ static void Prepare_Data(void){
 	}
 }
 
-static void Extract_Gauge_Data(uint8_t * source_buffer, uint8_t * dest_buffer, uint8_t offset){
+static void Extract_Gauge_Data(volatile uint8_t * source_buffer, uint8_t * dest_buffer, uint8_t offset){
 	for (uint8_t i = 0; i < 3; i++) {
 		dest_buffer[i+offset] = source_buffer[i];
 	}
@@ -595,10 +664,10 @@ static void Init_Gauges(void){
 
 	AD7730_Reset();
 
-	AD7730_Config(gauge1); //config gauge with all pre-configured settings
+	//AD7730_Config(gauge1); //config gauge with all pre-configured settings
 	AD7730_Config(gauge2); //config gauge with all pre-configured settings
 	AD7730_Config(gauge3); //config gauge with all pre-configured settings
-	AD7730_Config(gauge4); //config gauge with all pre-configured settings
+	//AD7730_Config(gauge4); //config gauge with all pre-configured settings
 }
 
 

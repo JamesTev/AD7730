@@ -10,6 +10,7 @@
 #define AD7730_H_
 
 #define SYSTEM_CALIBRATION 0
+#define DIFFERENTIAL_POLARITY_SWITCH 1
 
 #define GAUGE1_RDY_PORT GPIOE
 #define GAUGE1_RDY_PIN	GPIO_PIN_7
@@ -116,13 +117,13 @@
 #define CURRENT_MODE_1_SETTINGS_READ (MR1_BU_BIPOLAR | MR1_WL_24_BIT)
 #define CURRENT_MODE_0_SETTINGS_READ (MR0_HIREF_5V | MR0_RANGE_10MV | MR0_CHANNEL_1)
 
-uint8_t spi_tx_buffer[3]; //only need to transfer at most 3 bytes during config
-uint8_t spi_rx_buffer[3];
+volatile uint8_t spi_tx_buffer[3]; //only need to transfer at most 3 bytes during config
+volatile uint8_t spi_rx_buffer[3];
 
-uint8_t gauge1_data_buffer[3];
-uint8_t gauge2_data_buffer[3];
-uint8_t gauge3_data_buffer[3];
-uint8_t gauge4_data_buffer[3]; //do we need to define these in a source file?
+volatile uint8_t gauge1_data_buffer[3];
+volatile uint8_t gauge2_data_buffer[3];
+volatile uint8_t gauge3_data_buffer[3];
+volatile uint8_t gauge4_data_buffer[3]; //do we need to define these in a source file?
 
 typedef struct _ad7730
 {

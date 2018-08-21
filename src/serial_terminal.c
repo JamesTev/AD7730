@@ -41,18 +41,13 @@ CommsTask_TransmitPacketStruct serialTerminal_packetize(uint8_t* payload_to_pack
   }
 
   //pad with required number of zeros to make packet a multiple of 4 (hardware CRC must operate on sequence of words/32 bits)
-  uint8_t filler_bytes = ((packet_data_pointer-1)/4+1)*4 - (packet_data_pointer-1);
-  for(uint8_t i=packet_data_pointer; i < packet_data_pointer+filler_bytes; i++){
-    pkt_to_tx.data[i] =0;
-  }
-  packet_data_pointer+= filler_bytes;
+//  uint8_t filler_bytes = ((packet_data_pointer-1)/4+1)*4 - (packet_data_pointer-1);
+//  for(uint8_t i=packet_data_pointer; i < packet_data_pointer+filler_bytes; i++){
+//    pkt_to_tx.data[i] =0;
+//  }
+//  packet_data_pointer+= filler_bytes;
 
-  /*
-   * Generate 32 bit CRC using hardware CRC generator. Exclude start char (~) from CRC source so start from second element
-   */
-//  crcCalculated = HAL_CRC_Calculate(&hcrc, (uint8_t *)&pkt_to_tx.data[1], packet_data_pointer - 1); //generator poly 0x4C11DB7
-//  //crcCalculated = (uint16_t) crcCalc(payload_to_pack, 0, length_of_payload);
-//
+
 //  //put CRC
 //  for (raw_data_pointer = 0; raw_data_pointer < 4; raw_data_pointer++, packet_data_pointer++)
 //  {
@@ -80,4 +75,22 @@ CommsTask_TransmitPacketStruct serialTerminal_packetize(uint8_t* payload_to_pack
   pkt_to_tx.bytes_to_tx = packet_data_pointer;
 
   return pkt_to_tx;
+}
+
+/* Function to reverse 32bit array from start to end
+ * Note: should write to the array passed in (doesn't return new one)
+ */
+void reverseArray(uint32_t * arr, int len)
+{
+    int temp;
+    int start = 0;
+    int end = len-1;
+    while (start < end)
+    {
+        temp = arr[start];
+        arr[start] = arr[end];
+        arr[end] = temp;
+        start++;
+        end--;
+    }
 }
