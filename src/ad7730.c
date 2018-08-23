@@ -113,6 +113,28 @@ void AD7730_Config(AD7730 gauge){
 
 		while(HAL_GPIO_ReadPin(gauge.RDY_GPIO_Port, gauge.RDY_Pin) != GPIO_PIN_RESET); //wait for ready pin to go low after calibration
 	}
+	else{
+		//-------------- Manual Gain setting  -----------------------
+
+		spi_tx_buffer[0] = CR_SINGLE_WRITE | CR_GAIN_REGISTER;
+		Tx_AD7730(1, gauge); //will this just discard data shifted into RX data register?
+
+		spi_tx_buffer[0] = PGA_GAIN;
+		spi_tx_buffer[1] = 0;
+		spi_tx_buffer[2] = 0;
+		Tx_AD7730(3, gauge);
+	}
+
+	//-------------- Final internal Zero Calibration  -----------------------
+	spi_tx_buffer[0] = CR_SINGLE_WRITE | CR_MODE_REGISTER;
+	Tx_AD7730(1, gauge); //will this just discard data shifted into RX data register?
+
+	spi_tx_buffer[0] = MR1_MODE_INTERNAL_ZERO_CALIBRATION | CURRENT_MODE_1_SETTINGS_CAL;
+	spi_tx_buffer[1] = CURRENT_MODE_0_SETTINGS_CAL;
+	Tx_AD7730(2, gauge);
+
+	while(HAL_GPIO_ReadPin(gauge.RDY_GPIO_Port, gauge.RDY_Pin) != GPIO_PIN_RESET); //wait for ready pin to go low after calibration
+
 
 	//-------------- Filter Config for Read Operations (calibration complete) -----------------------
 	  	spi_tx_buffer[0] = CR_SINGLE_WRITE|CR_FILTER_REGISTER; //see if can just pass pointer to this as arg in function below
@@ -122,18 +144,15 @@ void AD7730_Config(AD7730 gauge){
 
 	  	//spi_tx_buffer[0] = FR2_SINC_AVERAGING_512;
 	  	//spi_tx_buffer[0] = 0x13; //first bits of SF for SF word as 311 (1kHz)
-	  	spi_tx_buffer[0] = 0x26; //first bits of SF for SF word as 623 (500Hz)
+	  	//spi_tx_buffer[0] = 0x26; //first bits of SF for SF word as 623 (500Hz)
+	  	spi_tx_buffer[0] = 0x3A; //first bits of SF for SF word as 938 (333Hz)
 
 	  	//spi_tx_buffer[1] = FR1_SKIP_OFF|FR1_FAST_OFF;
-	  	//spi_tx_buffer[1] = 0x71; //bottom bits for 1kHz (SF word 311)
-	  	spi_tx_buffer[1] = 0xF0; //bottom bits for 500Hz (SF word 623) with FastMode OFF
+	  	//spi_tx_buffer[1] = 0x70; //bottom bits for 1kHz (SF word 311) with FastMode OFF
+	  	//spi_tx_buffer[1] = 0xF0; //bottom bits for 500Hz (SF word 623) with FastMode OFF
+	  	spi_tx_buffer[1] = 0xA0; //bottom bits for 333Hz (SF word 938) with FastMode OFF
 	  	spi_tx_buffer[2] = FR0_CHOP_OFF; //******** CHANGE TO OFF IN NORMAL MODE
 	  	Tx_AD7730(3, gauge); //will this just discard data shifted into RX data register?
-
-	//  //check if settings were stored - read filter reg:
-	  spi_tx_buffer[0] = CR_SINGLE_READ | CR_FILTER_REGISTER; //see if can just pass pointer to this as arg in function below
-	  Tx_AD7730(1, gauge); //will this just discard data shifted into RX data register?
-	  Rx_AD7730(3, gauge);
 }
 
 /*
@@ -267,10 +286,31 @@ void AD7730_Sync(void){
 	HAL_GPIO_WritePin(AD7730_SYNC_PORT, AD7730_SYNC_PIN, GPIO_PIN_SET);
 }
 
+/*
+ * puts gain from spi_rx_buffer in first byte and offset in second byte of supplied rx_buffer
+ */
+void Check_Calibration_Params(AD7730 gauge, uint8_t * rx_buffer){
+	 //check gain settings:
+	  spi_tx_buffer[0] = CR_SINGLE_READ | CR_GAIN_REGISTER; //see if can just pass pointer to this as arg in function below
+	  Tx_AD7730(1, gauge); //will this just discard data shifted into RX data register?
+	  Rx_AD7730(3, gauge);
+	  rx_buffer[0] = spi_rx_buffer[0];
+
+	  if(rx_buffer[0] != PGA_GAIN){
+		  __asm("BKPT"); //gain not equal to value set earlier?
+	  }
+
+	  spi_tx_buffer[0] = CR_SINGLE_READ | CR_OFFSET_REGISTER; //see if can just pass pointer to this as arg in function below
+	  Tx_AD7730(1, gauge); //will this just discard data shifted into RX data register?
+	  Rx_AD7730(3, gauge);
+	  rx_buffer[1] = spi_rx_buffer[1];
+}
+
 void delayUS(uint32_t us) {
 	volatile uint32_t counter = 21*us; //tested on scope (102 vs 100 us)
 	while(counter--);
 }
+
 
 
 

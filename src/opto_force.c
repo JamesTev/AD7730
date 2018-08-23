@@ -8,7 +8,9 @@
 #include "main.h"
 #include "stm32f4xx_hal.h"
 
-uint8_t OF_config[9] = {170, 0, 50, 3, sample_1kHz, filter_500Hz, zeroing, 1, 224};
+//uint8_t OF_config[9] = {170, 0, 50, 3, sample_1kHz, filter_500Hz, zeroing, 1, 224};
+uint8_t OF_config[9] = {170, 0, 50, 3, sample_333Hz, filter_150Hz, zeroing, 1, 227};  //****** 333Hz sampling
+
 uint8_t OF_Config_Complete = 0;
 //uint8_t OF_config[9] = {170, 0, 50, 3, sample_10Hz, no_filter, zeroing, 1, 224};
 

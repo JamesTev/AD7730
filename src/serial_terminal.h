@@ -2,12 +2,12 @@
  * SerialTerminal.h
  *
  *  Created on: Jul 4, 2012
- *      Author: James Gowans
+ *      Origianl Author: James Gowans
+ *      Adapted by James Teversham 2018
  *
  *      Description:  Provides functionality for printf and console via UART
  */
 
-//Modified by James Teversham and callen fisher 2018
 #ifndef SERIALTERMINAL_H_
 #define SERIALTERMINAL_H_
 

@@ -88,13 +88,20 @@ static volatile AD7730 gauge2;
 static volatile AD7730 gauge3;
 static volatile AD7730 gauge4;
 
-float percent3 = 0;
-float percent2 = 0;
-int32_t num3 = 0;
-int32_t num2 = 0;
+volatile float percent1 = 0;
+volatile float percent2 = 0;
+volatile float percent3 = 0;
+volatile float percent4 = 0;
+volatile int32_t num1 = 0;
+volatile int32_t num2 = 0;
+volatile int32_t num3 = 0;
+volatile int32_t num4 = 0;
 
-float readings1[510];
-float readings2[510];
+volatile float readings1[510];
+volatile float readings2[510];
+volatile float readings3[510];
+volatile float readings4[510];
+
 uint32_t sample_counter = 0;
 uint32_t num_readings = 0;
 
@@ -127,81 +134,51 @@ int main(void)
   //***************** Application Init Functions ******************
   Init_Gauges();
   //-------------- Filter Config for Read Operations (calibration complete) -----------------------
-  	spi_tx_buffer[0] = CR_SINGLE_WRITE|CR_FILTER_REGISTER; //see if can just pass pointer to this as arg in function below
-  	Tx_AD7730(1, gauge3); //will this just discard data shifted into RX data register?
+//  spi_tx_buffer[0] = CR_SINGLE_WRITE|CR_FILTER_REGISTER; //see if can just pass pointer to this as arg in function below
+//  Tx_AD7730(1, gauge3); //will this just discard data shifted into RX data register?
+//
+//  //************** TESTING: CHANGING THESE SETTINGS
+//
+//  //spi_tx_buffer[0] = FR2_SINC_AVERAGING_512;
+//  //spi_tx_buffer[0] = 0x13; //first bits of SF for SF word as 311 (1kHz)
+//  spi_tx_buffer[0] = 0x26; //first bits of SF for SF word as 623 (500Hz)
+//
+//  //spi_tx_buffer[1] = FR1_SKIP_OFF|FR1_FAST_OFF;
+//  //spi_tx_buffer[1] = 0x70; //bottom bits for 1kHz (SF word 311)
+//  spi_tx_buffer[1] = 0xF0; //bottom bits for 500Hz (SF word 623) with FastMode OFF
+//  spi_tx_buffer[2] = FR0_CHOP_OFF; //******** CHANGE TO OFF IN NORMAL MODE
+//  Tx_AD7730(3, gauge3); //will this just discard data shifted into RX data register?
 
-  	//************** TESTING: CHANGING THESE SETTINGS
-
-  	//spi_tx_buffer[0] = FR2_SINC_AVERAGING_512;
-  	//spi_tx_buffer[0] = 0x13; //first bits of SF for SF word as 311 (1kHz)
-  	spi_tx_buffer[0] = 0x26; //first bits of SF for SF word as 623 (500Hz)
-
-  	//spi_tx_buffer[1] = FR1_SKIP_OFF|FR1_FAST_OFF;
-  	//spi_tx_buffer[1] = 0x71; //bottom bits for 1kHz (SF word 311)
-  	spi_tx_buffer[1] = 0xF0; //bottom bits for 500Hz (SF word 623) with FastMode OFF
-  	spi_tx_buffer[2] = FR0_CHOP_OFF; //******** CHANGE TO OFF IN NORMAL MODE
-  	Tx_AD7730(3, gauge3); //will this just discard data shifted into RX data register?
-
-//  //check if settings were stored - read filter reg:
   spi_tx_buffer[0] = CR_SINGLE_READ | CR_FILTER_REGISTER; //see if can just pass pointer to this as arg in function below
-  Tx_AD7730(1, gauge3); //will this just discard data shifted into RX data register?
-  Rx_AD7730(3, gauge3);
+  Tx_AD7730(1, gauge4); //will this just discard data shifted into RX data register?
+  Rx_AD7730(3, gauge4);
 
-  //************** TESTING: Manually setting gain settings
+  Check_Calibration_Params(gauge1, (uint8_t *)&gauge1_data_buffer);
+  Check_Calibration_Params(gauge2, (uint8_t *)&gauge2_data_buffer);
+  Check_Calibration_Params(gauge3, (uint8_t *)&gauge3_data_buffer);
+  Check_Calibration_Params(gauge4, (uint8_t *)&gauge4_data_buffer);
 
-  spi_tx_buffer[0] = CR_SINGLE_WRITE | CR_GAIN_REGISTER;
-  Tx_AD7730(1, gauge2); //will this just discard data shifted into RX data register?
-
-  spi_tx_buffer[0] = 200; //first bits of SF for SF word as 623 (500Hz)
-  spi_tx_buffer[1] = 0; //bottom bits for 500Hz (SF word 623)
-  spi_tx_buffer[2] = 0; //******** CHANGE TO OFF IN NORMAL MODE
-  Tx_AD7730(3, gauge2); //will this just discard data shifted into RX data register?
-
-  spi_tx_buffer[0] = CR_SINGLE_WRITE | CR_GAIN_REGISTER;
-  Tx_AD7730(1, gauge3); //will this just discard data shifted into RX data register?
-
-  spi_tx_buffer[0] = 200; //first bits of SF for SF word as 623 (500Hz)
-  spi_tx_buffer[1] = 0; //bottom bits for 500Hz (SF word 623)
-  spi_tx_buffer[2] = 0; //******** CHANGE TO OFF IN NORMAL MODE
-  Tx_AD7730(3, gauge3); //will this just discard data shifted into RX data register?
-
-  //check gain settings:
-  spi_tx_buffer[0] = CR_SINGLE_READ | CR_GAIN_REGISTER; //see if can just pass pointer to this as arg in function below
-  Tx_AD7730(1, gauge2); //will this just discard data shifted into RX data register?
-  Rx_AD7730(3, gauge2);
-
-  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
-
-  spi_tx_buffer[0] = CR_SINGLE_READ | CR_GAIN_REGISTER; //see if can just pass pointer to this as arg in function below
-  Tx_AD7730(1, gauge3); //will this just discard data shifted into RX data register?
-  Rx_AD7730(3, gauge3);
-
-  spi_tx_buffer[0] = CR_SINGLE_READ | CR_OFFSET_REGISTER; //see if can just pass pointer to this as arg in function below
-  Tx_AD7730(1, gauge2); //will this just discard data shifted into RX data register?
-  Rx_AD7730(3, gauge2);
-
-  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
+  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0); //check gain and offset values in gauge data buffers at this point
   HAL_Delay(10);
 
    MX_USART3_UART_Init();
 
    //uncomment from here ********
-//  Config_OF(); //need to start continuous OF readings straight after
-//  Config_Idle_IRQ();
-//  while(!OF_Config_Complete); //wait until config has successfully complete
-//  HAL_UART_Receive_DMA(&huart3, DMA_RX_Buffer, 16); //** start continuous readings
-//
-//  Start_Cont_Readings();
-//  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
+  Config_OF(); //need to start continuous OF readings straight after
+  Config_Idle_IRQ();
+  while(!OF_Config_Complete); //wait until config has successfully complete
+  HAL_UART_Receive_DMA(&huart3, DMA_RX_Buffer, 16); //** start continuous readings
+
+  //Start_Cont_Readings();
+  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
    //uncomment to here ********
 
   //************** Keep /sync and /reset pins high in normal operation
 
-   AD7730_Start_Cont_Read(gauge2); //for continuous readings
-   AD7730_Start_Cont_Read(gauge3); //for continuous readings
-
-   //***** NOTE: SampleFlag now running at 500Hz!
+   Start_Cont_Readings();
+   //***** NOTE: SampleFlag now running at 333Hz!
    time_ms=0;
+   num_readings=0;
   while (1)
   {
 	  if(0 && SampleFlag && new_reading){ //&& new_reading
@@ -233,16 +210,25 @@ int main(void)
 //		  AD7730_Read(gauge3, (uint8_t *)&gauge3_data_buffer);
 //		  AD7730_Read(gauge2, (uint8_t *)&gauge2_data_buffer);
 
-		  AD7730_Read_Cont(gauge2, (uint8_t *)&gauge2_data_buffer);
-		  AD7730_Read_Cont(gauge3, (uint8_t *)&gauge3_data_buffer);
+		  Read_Gauges(); //continuous read of gauges 1 - 4
+
+		  percent1 = AD7730_Process_Reading_Percent((uint8_t *)&gauge1_data_buffer); //note: might need to consider not using floats in actual loop
+		  num1 = AD7730_Process_Reading_Num((uint8_t *)&gauge1_data_buffer);
+
+		  percent2 = AD7730_Process_Reading_Percent((uint8_t *)&gauge2_data_buffer);
+		  num2 = AD7730_Process_Reading_Num((uint8_t *)&gauge2_data_buffer);
 
 		  percent3 = AD7730_Process_Reading_Percent((uint8_t *)&gauge3_data_buffer); //note: might need to consider not using floats in actual loop
 		  num3 = AD7730_Process_Reading_Num((uint8_t *)&gauge3_data_buffer);
 
-		  percent2 = AD7730_Process_Reading_Percent((uint8_t *)&gauge2_data_buffer);
-		  num2 = AD7730_Process_Reading_Num((uint8_t *)&gauge2_data_buffer);
-		  readings1[count] = percent3;
+		  percent4 = AD7730_Process_Reading_Percent((uint8_t *)&gauge4_data_buffer);
+		  num4 = AD7730_Process_Reading_Num((uint8_t *)&gauge4_data_buffer);
+
+
+		  readings1[count] = percent1;
 		  readings2[count] = percent2;
+		  readings3[count] = percent3;
+		  readings4[count] = percent4;
 		  count++;
 		  SampleFlag = 0;
 	  }
@@ -311,7 +297,7 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 void HAL_SYSTICK_Callback(void){
 	sample_counter++;
 	//********** SAMPLE COUNTER CHANGED
-	if(sample_counter==2){
+	if(sample_counter==3){
 		SampleFlag = SET;
 		sample_counter = 0;
 	}
@@ -361,10 +347,9 @@ static void Prepare_Data(void){
 	tempData[22] = 0; //dummy bytes to pad data packet to 24 bytes for CRC calculation
 	tempData[23] = 0;
 
-
-
 	uint8_t len = sizeof(tempUnion.j);
 
+	//copy bytes to union
 	for(uint8_t i=0; i < len; i++){
 		tempUnion.j[len-i-1] = tempData[i];
 	}
@@ -373,7 +358,10 @@ static void Prepare_Data(void){
 	/*
 	 * Generate 32 bit CRC using hardware CRC generator. Exclude start char (~) from CRC source so start from second element
 	 */
-	 //crcCalculated = HAL_CRC_Calculate(&hcrc, (uint8_t *)&pkt_to_tx.data[1], packet_data_pointer - 1); //generator poly 0x4C11DB7
+	 uint32_t crcCalculated = HAL_CRC_Calculate(&hcrc, (uint32_t *)&tempUnion.i, 6); //generator poly 0x4C11DB7
+	 for(uint8_t i=0; i< 4; i++){
+	     tempData[24+i] = (crcCalculated >> (8*(3-i)))&0xFF; //unpack 4 bytes from CRC word and store in tempData array (MSB first)
+	 }
 
 //	for(uint8_t i = 0; i < 22; i++){
 //		if(i%2==0){
@@ -664,10 +652,11 @@ static void Init_Gauges(void){
 
 	AD7730_Reset();
 
-	//AD7730_Config(gauge1); //config gauge with all pre-configured settings
-	AD7730_Config(gauge2); //config gauge with all pre-configured settings
 	AD7730_Config(gauge3); //config gauge with all pre-configured settings
-	//AD7730_Config(gauge4); //config gauge with all pre-configured settings
+	AD7730_Config(gauge1); //config gauge with all pre-configured settings
+	AD7730_Config(gauge2); //config gauge with all pre-configured settings
+
+	AD7730_Config(gauge4); //config gauge with all pre-configured settings
 }
 
 

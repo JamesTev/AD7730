@@ -12,9 +12,15 @@
 
 #define OF_config_buffer_size 9
 #define OF_buffer_size 192 //opto force receive buffer size
+
+
 #define sample_1kHz 1
+#define sample_333Hz 3
 #define sample_10Hz 100
+
 #define filter_500Hz 1
+#define filter_150Hz 2
+
 #define no_filter 0
 #define zeroing 255
 
