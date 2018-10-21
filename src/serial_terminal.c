@@ -2,9 +2,9 @@
  * SerialTerminal.c
  *
  *  Created on: Jul 4, 2012
- *      Author: James Gowans
+ *  Author: James Gowans
+ *  Modified by Callen Fisher and James Teversham 2018
  */
-//modified by callen fisher and James Teversham 2018
 #include "serial_terminal.h"
 
 CRC_HandleTypeDef hcrc;
@@ -39,34 +39,6 @@ CommsTask_TransmitPacketStruct serialTerminal_packetize(uint8_t* payload_to_pack
       pkt_to_tx.data[packet_data_pointer] = char_to_pack;
     }
   }
-
-  //pad with required number of zeros to make packet a multiple of 4 (hardware CRC must operate on sequence of words/32 bits)
-//  uint8_t filler_bytes = ((packet_data_pointer-1)/4+1)*4 - (packet_data_pointer-1);
-//  for(uint8_t i=packet_data_pointer; i < packet_data_pointer+filler_bytes; i++){
-//    pkt_to_tx.data[i] =0;
-//  }
-//  packet_data_pointer+= filler_bytes;
-
-
-//  //put CRC
-//  for (raw_data_pointer = 0; raw_data_pointer < 4; raw_data_pointer++, packet_data_pointer++)
-//  {
-//    char_to_pack = (uint8_t) ((crcCalculated >> 8 * (3 - raw_data_pointer)) & 0x00FF);
-//    if (char_to_pack == 0x7E)
-//    {
-//      pkt_to_tx.data[packet_data_pointer++] = 0x7D;
-//      pkt_to_tx.data[packet_data_pointer] = 0x5E;
-//    }
-//    else if (char_to_pack == 0x7D)
-//    {
-//      pkt_to_tx.data[packet_data_pointer++] = 0x7D;
-//      pkt_to_tx.data[packet_data_pointer] = 0x5D;
-//    }
-//    else
-//    {
-//      pkt_to_tx.data[packet_data_pointer] = char_to_pack;
-//    }
-//  }
 
   //put end char
   pkt_to_tx.data[packet_data_pointer++] = 0x7E;

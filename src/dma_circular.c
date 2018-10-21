@@ -1,27 +1,7 @@
-/*  To enable circular buffer, you have to enable IDLE LINE DETECTION interrupt 
-
-__HAL_UART_ENABLE_ITUART_HandleTypeDef *huart, UART_IT_IDLE);   // enable idle line interrupt
-__HAL_DMA_ENABLE_IT (DMA_HandleTypeDef *hdma, DMA_IT_TC);  // enable DMA Tx cplt interrupt
-
-also enable RECEIVE DMA
-
-HAL_UART_Receive_DMA (UART_HandleTypeDef *huart, DMA_RX_Buffer, 64);
-
-
-IF you want to transmit the received data uncomment lines 91 and 101
-
-
-PUT THE FOLLOWING IN THE MAIN.c
-
-#define DMA_RX_BUFFER_SIZE          64
-uint8_t DMA_RX_Buffer[DMA_RX_BUFFER_SIZE];
-
-#define UART_BUFFER_SIZE            256
-uint8_t UART_Buffer[UART_BUFFER_SIZE];
-
-
-*/
-
+/*
+ * Manual circular DMA implementation. Needed greater control than that offered by HAL implementation.
+ * Uses UART idle line interrupt. Note the manual call to DMA RX Complete callback
+ */
 #include "dma_circular.h"
 
 extern UART_HandleTypeDef huart3;
@@ -29,7 +9,6 @@ extern DMA_HandleTypeDef hdma_usart3_rx;
 
 
 extern uint8_t DMA_RX_Buffer[DMA_RX_BUFFER_SIZE];
-
 extern uint8_t UART_Buffer[UART_BUFFER_SIZE];
 
 size_t Write;
@@ -93,11 +72,7 @@ void DMA_IrqHandler (DMA_HandleTypeDef *hdma)
         Write += tocopy;
         len -= tocopy;
         ptr += tocopy;
-		
-		/* UNCOMMENT BELOW TO transmit the data via uart */
 
-		//HAL_UART_Transmit(&huart3, &UART_Buffer[Write-tocopy], tocopy, 10);
-		
 		/* If still data to write for beginning of buffer */
        if (len) 
 		{

@@ -4,7 +4,6 @@
  *  Created on: Jul 4, 2012
  *      Origianl Author: James Gowans
  *      Adapted by James Teversham 2018
- *
  *      Description:  Provides functionality for printf and console via UART
  */
 
@@ -15,7 +14,8 @@
 #include <stdlib.h>
 #include "CRC.h"
 
-#define COMMS_TX_BUFFER_SIZE 34
+#define COMMS_TX_BUFFER_SIZE 36
+#define OF_BAD_PACKET 0b10000
 
 typedef struct {
   uint8_t data[COMMS_TX_BUFFER_SIZE];

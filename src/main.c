@@ -34,6 +34,9 @@
   * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
   * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   *
+  * Author: James Teversham
+  * Date: August/September 2018
+  *
   ******************************************************************************
   */
 /* Includes ------------------------------------------------------------------*/
@@ -44,28 +47,20 @@
 #include "dma_circular.h"
 #include "opto_force.h"
 
-
-/* USER CODE BEGIN Includes */
-
-/* USER CODE END Includes */
-
 /* Private variables ---------------------------------------------------------*/
 CRC_HandleTypeDef hcrc;
 SPI_HandleTypeDef hspi2;
+SPI_HandleTypeDef hspi1;
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart2_tx;
 DMA_HandleTypeDef hdma_usart3_rx;
 
-/* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
 __IO ITStatus UartTxReady = SET;
 __IO ITStatus SampleFlag = SET;
 
-//uint8_t ulReceivedValue[COMMS_TX_BUFFER_SIZE+2]; //if including opcode for first 2 bytes
 uint8_t ulReceivedValue[COMMS_TX_BUFFER_SIZE];
-
-/* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
@@ -73,34 +68,27 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_SPI2_Init(void);
+static void MX_SPI1_Init(void);
+
 static void MX_USART2_UART_Init(void);
 static void MX_CRC_Init(void);
 static void Init_Gauges(void);
-static void Start_OF_Cont_Readings(void);
-static void Start_Cont_Readings(void); //starts reading both OF and 4xAD7730
-static void Stop_Cont_Readings(void);
-static void Read_Gauges(void);
 static void Prepare_Data(void);
 static void Extract_Gauge_Data(volatile uint8_t * source_buffer, uint8_t * dest_buffer, uint8_t offset);
+static void Read_Switch_Matrix(void);
+static void update_position(uint8_t * switch_arr);
 
 static volatile AD7730 gauge1;
 static volatile AD7730 gauge2;
 static volatile AD7730 gauge3;
 static volatile AD7730 gauge4;
 
-volatile float percent1 = 0;
-volatile float percent2 = 0;
-volatile float percent3 = 0;
-volatile float percent4 = 0;
-volatile int32_t num1 = 0;
-volatile int32_t num2 = 0;
-volatile int32_t num3 = 0;
-volatile int32_t num4 = 0;
+static volatile uint8_t switch_matrix[5];
 
-volatile float readings1[510];
-volatile float readings2[510];
-volatile float readings3[510];
-volatile float readings4[510];
+uint8_t x = 0;
+uint8_t y = 0; //triggered switch co-ords
+
+uint16_t gauge_fixes[4];
 
 uint32_t sample_counter = 0;
 uint32_t num_readings = 0;
@@ -119,10 +107,13 @@ uint32_t time_ms = 0;
 uint32_t count = 0;
 int8_t dir = 1;
 
+uint8_t OF_error_flag = 0;
+
 
 int main(void)
 {
   //***************** System and Peripheral Init Functions ******************
+
   HAL_Init();
   SystemClock_Config();
   MX_GPIO_Init();
@@ -130,124 +121,70 @@ int main(void)
   MX_SPI2_Init();
   MX_USART2_UART_Init();
   MX_CRC_Init();
+  MX_SPI1_Init();
 
   //***************** Application Init Functions ******************
+  time_ms = 0;
   Init_Gauges();
-  //-------------- Filter Config for Read Operations (calibration complete) -----------------------
-//  spi_tx_buffer[0] = CR_SINGLE_WRITE|CR_FILTER_REGISTER; //see if can just pass pointer to this as arg in function below
-//  Tx_AD7730(1, gauge3); //will this just discard data shifted into RX data register?
-//
-//  //************** TESTING: CHANGING THESE SETTINGS
-//
-//  //spi_tx_buffer[0] = FR2_SINC_AVERAGING_512;
-//  //spi_tx_buffer[0] = 0x13; //first bits of SF for SF word as 311 (1kHz)
-//  spi_tx_buffer[0] = 0x26; //first bits of SF for SF word as 623 (500Hz)
-//
-//  //spi_tx_buffer[1] = FR1_SKIP_OFF|FR1_FAST_OFF;
-//  //spi_tx_buffer[1] = 0x70; //bottom bits for 1kHz (SF word 311)
-//  spi_tx_buffer[1] = 0xF0; //bottom bits for 500Hz (SF word 623) with FastMode OFF
-//  spi_tx_buffer[2] = FR0_CHOP_OFF; //******** CHANGE TO OFF IN NORMAL MODE
-//  Tx_AD7730(3, gauge3); //will this just discard data shifted into RX data register?
 
-  spi_tx_buffer[0] = CR_SINGLE_READ | CR_FILTER_REGISTER; //see if can just pass pointer to this as arg in function below
-  Tx_AD7730(1, gauge4); //will this just discard data shifted into RX data register?
-  Rx_AD7730(3, gauge4);
-
-  Check_Calibration_Params(gauge1, (uint8_t *)&gauge1_data_buffer);
-  Check_Calibration_Params(gauge2, (uint8_t *)&gauge2_data_buffer);
-  Check_Calibration_Params(gauge3, (uint8_t *)&gauge3_data_buffer);
-  Check_Calibration_Params(gauge4, (uint8_t *)&gauge4_data_buffer);
+  Check_Calibration_Params(gauge1);
+  Check_Calibration_Params(gauge2);
+  Check_Calibration_Params(gauge3);
+  Check_Calibration_Params(gauge4);
 
   HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0); //check gain and offset values in gauge data buffers at this point
-  HAL_Delay(10);
 
-   MX_USART3_UART_Init();
+  MX_USART3_UART_Init();
 
-   //uncomment from here ********
   Config_OF(); //need to start continuous OF readings straight after
   Config_Idle_IRQ();
   while(!OF_Config_Complete); //wait until config has successfully complete
   HAL_UART_Receive_DMA(&huart3, DMA_RX_Buffer, 16); //** start continuous readings
 
-  //Start_Cont_Readings();
-  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
-   //uncomment to here ********
 
   //************** Keep /sync and /reset pins high in normal operation
 
-   Start_Cont_Readings();
-   //***** NOTE: SampleFlag now running at 333Hz!
+    AD7730_Start_Cont_Read(gauge1); //for continuous readings
+    AD7730_Start_Cont_Read(gauge2); //for continuous readings
+    AD7730_Start_Cont_Read(gauge3); //for continuous readings
+    AD7730_Start_Cont_Read(gauge4); //for continuous readings
+
    time_ms=0;
    num_readings=0;
+   HAL_GPIO_WritePin(LD5_GPIO_Port, LD5_Pin, 0); //check gain and offset values in gauge data buffers at this point
+
   while (1)
   {
-	  if(0 && SampleFlag && new_reading){ //&& new_reading
-
-		  Read_Gauges();
-		  //num = AD7730_Process_Reading_Num((uint8_t *)&gauge1_data_buffer);
+	  Read_Switch_Matrix(); //update values in switch matrix array
+	  if(SampleFlag && new_reading){
+		  //************** add && new_reading clause when using OF
 		  readings_caught++;
 		  new_reading = 0;
 
+		  AD7730_Read_Cont(gauge1, (uint8_t *)&gauge1_data_buffer);
+		  AD7730_Read_Cont(gauge2, (uint8_t *)&gauge2_data_buffer);
+		  AD7730_Read_Cont(gauge4, (uint8_t *)&gauge4_data_buffer);
+		  AD7730_Read_Cont(gauge3, (uint8_t *)&gauge3_data_buffer);
+
 		  Prepare_Data();
-		  if(HAL_UART_Transmit_DMA(&huart2, (uint8_t*)ulReceivedValue, COMMS_TX_BUFFER_SIZE)!= HAL_OK) //COMMS_TX_BUFFER_SIZE
+		  if(HAL_UART_Transmit_DMA(&huart2, (uint8_t*)ulReceivedValue, COMMS_TX_BUFFER_SIZE)!= HAL_OK) //DMA UART transfer
 		  {
 			  _Error_Handler(__FILE__, __LINE__);
 		  }
 
-		  if(readings_caught%100 == 0){
-
-			  HAL_GPIO_TogglePin(LD6_GPIO_Port, LD6_Pin);
-			  // &(hdma_usart3_rx) ->Instance->CR &= ~DMA_SxCR_EN;            /* Stop DMA transfer */
-		  }
-		  UartTxReady = 0;
-		  SampleFlag = 0;
-	  }
-
-	  if(SampleFlag && count < 500){
-		  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
-		  //while(HAL_GPIO_ReadPin(gauge1.RDY_GPIO_Port, gauge1.RDY_Pin) != GPIO_PIN_RESET); //wait for ready pin to go low
-		  //HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 1);
-//		  AD7730_Read(gauge3, (uint8_t *)&gauge3_data_buffer);
-//		  AD7730_Read(gauge2, (uint8_t *)&gauge2_data_buffer);
-
-		  Read_Gauges(); //continuous read of gauges 1 - 4
-
-		  percent1 = AD7730_Process_Reading_Percent((uint8_t *)&gauge1_data_buffer); //note: might need to consider not using floats in actual loop
-		  num1 = AD7730_Process_Reading_Num((uint8_t *)&gauge1_data_buffer);
-
-		  percent2 = AD7730_Process_Reading_Percent((uint8_t *)&gauge2_data_buffer);
-		  num2 = AD7730_Process_Reading_Num((uint8_t *)&gauge2_data_buffer);
-
-		  percent3 = AD7730_Process_Reading_Percent((uint8_t *)&gauge3_data_buffer); //note: might need to consider not using floats in actual loop
-		  num3 = AD7730_Process_Reading_Num((uint8_t *)&gauge3_data_buffer);
-
-		  percent4 = AD7730_Process_Reading_Percent((uint8_t *)&gauge4_data_buffer);
-		  num4 = AD7730_Process_Reading_Num((uint8_t *)&gauge4_data_buffer);
-
-
-		  readings1[count] = percent1;
-		  readings2[count] = percent2;
-		  readings3[count] = percent3;
-		  readings4[count] = percent4;
 		  count++;
 		  SampleFlag = 0;
 	  }
-	  else if(count >= 500){
-		  //AD7730_Stop_Cont_Read(gauge2); //for continuous readings
-		  //AD7730_Stop_Cont_Read(gauge3); //for continuous readings
-		  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 1);
+	  else if(count >= 500){ //flash LD6 every 500 samples to show sampling is working
 
-		  if(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == 1){
-			  count=0;
-			  //AD7730_Start_Cont_Read(gauge2); //for continuous readings
-			  //AD7730_Start_Cont_Read(gauge3); //for continuous readings
-		  }
+		  HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 1);
+		  count=0;
 	  }
 
-
-
+	  //11101100101111111010111
+	  //11101100110011001001000
+	  //111011001100111001001000
   }
-  /* USER CODE END 3 */
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
@@ -267,14 +204,13 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 
 		if(num_readings > 1 && Validate_OF_Data_Packet((uint8_t *)&DMA_RX_Buffer, OF_DATA_PACKET)!=OF_PACKET_VALID){
 			bad_readings++;
-			HAL_GPIO_WritePin(LD5_GPIO_Port, LD5_Pin, 1);
+			OF_error_flag = 1;
 			return;
 		}
 
 		if(num_readings ==1){
-			start_readings = (DMA_RX_Buffer[4] <<8) | DMA_RX_Buffer[5];
+			start_readings = (DMA_RX_Buffer[4] <<8) | DMA_RX_Buffer[5]; //extract start readings from first OF packet
 		}
-		HAL_GPIO_WritePin(LD5_GPIO_Port, LD5_Pin, 0);
 	}
 	else if(huart->Instance==USART2){
 		/** SD Card Data Tx Callback **/
@@ -288,7 +224,6 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
   /* Turn LED3 on: Transfer error in reception/transmission process */
 	__asm__("BKPT"); //software breakpoint
 	if(huart->ErrorCode == HAL_UART_ERROR_ORE){ //overrun error
-
 		HAL_GPIO_WritePin(LD5_GPIO_Port, LD5_Pin, GPIO_PIN_SET);
 
 	}
@@ -297,19 +232,29 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 void HAL_SYSTICK_Callback(void){
 	sample_counter++;
 	//********** SAMPLE COUNTER CHANGED
-	if(sample_counter==3){
+	if(sample_counter==1){ //set for 1kHz
 		SampleFlag = SET;
 		sample_counter = 0;
 	}
 
-	if(1 || readings_caught > 0){
+	if(readings_caught > 0){
 		time_ms++;
 	}
 }
 
+static void Read_Switch_Matrix(void){
+	for(uint8_t i=0; i<5; i++){
+		spi_tx_buffer[0] = 0b1 << i;
+		Transmit_SR(); //set 1 row high at a time
+		Receive_SR();
+		switch_matrix[i] = spi_rx_buffer[0] & 0xFC; //only read 6 MSB from rx buffer (6 columns connected)
+	}
+	update_position(&switch_matrix);
+}
+
 static void Prepare_Data(void){
 
-	uint8_t tempData[28]; //change this to correct number of data bytes!
+	uint8_t tempData[28];
 
 	union{
 		uint32_t i[6];
@@ -333,8 +278,8 @@ static void Prepare_Data(void){
 	 * Get x and y pos from switch array. Setting to ASCII 36 ($ sign) for
 	 * testing
 	 */
-	uint8_t pos_x = 36;
-	uint8_t pos_y = 36;
+	uint8_t pos_x = x; //get the most recent x and y co-ords
+	uint8_t pos_y = y;
 	tempData[18] = pos_x;
 	tempData[19] = pos_y;
 
@@ -344,8 +289,13 @@ static void Prepare_Data(void){
 	tempData[20] = DMA_RX_Buffer[4];
 	tempData[21] = DMA_RX_Buffer[5];
 
-	tempData[22] = 0; //dummy bytes to pad data packet to 24 bytes for CRC calculation
-	tempData[23] = 0;
+	uint8_t error_byte = 0;
+	if(OF_error_flag){
+		error_byte |= OF_BAD_PACKET; //set OF packet error flag in error byte
+	}
+
+	tempData[22] = error_byte;
+	tempData[23] = 0; //dummy bytes to pad data packet to 24 bytes for CRC calculation
 
 	uint8_t len = sizeof(tempUnion.j);
 
@@ -363,16 +313,6 @@ static void Prepare_Data(void){
 	     tempData[24+i] = (crcCalculated >> (8*(3-i)))&0xFF; //unpack 4 bytes from CRC word and store in tempData array (MSB first)
 	 }
 
-//	for(uint8_t i = 0; i < 22; i++){
-//		if(i%2==0){
-//			tempData[i] = 65; //ASCII A for testing
-//			continue;
-//		}
-//		tempData[i] = 66; //ASCII A for testing
-//	}
-
-	//assign CRC bytes to datapacket here ************
-
 	CommsTask_TransmitPacketStruct data=serialTerminal_packetize(tempData,sizeof(tempData)); //packetize into packet of bytes
 	int i=0;
 	for(i=data.bytes_to_tx;i<COMMS_TX_BUFFER_SIZE;i++)
@@ -384,6 +324,8 @@ static void Prepare_Data(void){
 		//ulReceivedValue[i+2]=data.data[i]; //populate DMA memory source buffer with packetized data (leave first 2 bytes for opcode)
 		ulReceivedValue[i]=data.data[i];
 	}
+
+	OF_error_flag = 0; //reset an wait for next error flag
 }
 
 static void Extract_Gauge_Data(volatile uint8_t * source_buffer, uint8_t * dest_buffer, uint8_t offset){
@@ -392,36 +334,50 @@ static void Extract_Gauge_Data(volatile uint8_t * source_buffer, uint8_t * dest_
 	}
 }
 
-static void Read_Gauges(void){
-	 AD7730_Read_Cont(gauge1, (uint8_t *)&gauge1_data_buffer);
-	 AD7730_Read_Cont(gauge2, (uint8_t *)&gauge2_data_buffer);
-	 AD7730_Read_Cont(gauge3, (uint8_t *)&gauge3_data_buffer);
-	 AD7730_Read_Cont(gauge4, (uint8_t *)&gauge4_data_buffer);
+void Transmit_SR(void){
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, 0);
+	HAL_SPI_Transmit(&hspi1, (uint8_t *)&spi_tx_buffer, 1, 1000); //will this just discard data shifted into RX data register?
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, 1); //rising edge to latch data into output register
+	//HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 0);
 }
 
-static void Start_Cont_Readings(void){
-
-	AD7730_Start_Cont_Read(gauge1); //for continuous readings
-	AD7730_Start_Cont_Read(gauge2); //for continuous readings
-	AD7730_Start_Cont_Read(gauge3); //for continuous readings
-	AD7730_Start_Cont_Read(gauge4); //for continuous readings
+void Receive_SR(void){
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, 0);
+	//HAL_Delay(1);
+	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, 1); //rising edge to latch data into output register
+	HAL_SPI_Receive(&hspi1, (uint8_t *)&spi_rx_buffer, 1, 1000); //will this just discard data shifted into RX data register?
+	//HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 0);
 }
 
-static void Stop_Cont_Readings(void){
-	HAL_UART_DMAStop(&huart3);
+void update_position(uint8_t * switch_arr){
 
-	AD7730_Stop_Cont_Read(gauge1);
-	AD7730_Stop_Cont_Read(gauge2);
-	AD7730_Stop_Cont_Read(gauge3);
-	AD7730_Stop_Cont_Read(gauge4);
+  uint8_t row;
+  uint8_t col;
+
+  for(int i=0; i < 5; i++){
+    if(switch_arr[i] > 0){
+      row = i+1;
+      break;
+    }
+  }
+  for(int i=0; i < 5; i++){
+    if((row << i) & 0x80 != 0){
+      col = i+1;
+    }
+  }
+  x = col - 3; //so column 3 is the x=0 line (y axis)
+  y = row + 1; //still need to add logic for y
+  if(row == 5 && col <= 3){ //adjustments for 5th (offset rows 5.1 and 5.2)
+    y = 3;
+    x = col - 2;
+  }
+  else if(row ==5 && col > 3){
+    y = -3;
+    x = col - 5;
+  }
+ y = row + 1; //still need to add logic for y
 }
 
-static void Start_OF_Cont_Readings(void){
-	Config_OF(); //need to start continuous OF readings straight after
-
-	Config_Idle_IRQ();
-	HAL_UART_Receive_DMA (&huart3, DMA_RX_Buffer, 16); //** start continuous readings
-}
 
 /**
   * @brief System Clock Configuration
@@ -481,6 +437,30 @@ void SystemClock_Config(void)
   HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
 }
 
+/* SPI1 init function */
+static void MX_SPI1_Init(void)
+{
+
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    _Error_Handler(__FILE__, __LINE__);
+  }
+
+}
+
 /* SPI2 init function */
 static void MX_SPI2_Init(void)
 {
@@ -493,7 +473,7 @@ static void MX_SPI2_Init(void)
   hspi2.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi2.Init.CLKPhase = SPI_PHASE_2EDGE; //****This is for AD7730
   hspi2.Init.NSS = SPI_NSS_SOFT;
-  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32; //TODO: investigate effect of changing this to 16 or less
+  hspi2.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16; //TODO: investigate effect of changing this to 16 or less
   hspi2.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi2.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi2.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -504,6 +484,7 @@ static void MX_SPI2_Init(void)
   }
 
 }
+
 
 /* USART2 init function */
 static void MX_USART2_UART_Init(void)
@@ -598,17 +579,19 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
-  GPIO_InitStruct.Pin = AD7730_RESET_PIN;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(AD7730_RESET_PORT, &GPIO_InitStruct);
+  //Uncomment this section to control RESET and SYNC pins with software
 
-  GPIO_InitStruct.Pin = AD7730_SYNC_PIN;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(AD7730_SYNC_PORT, &GPIO_InitStruct);
+//  GPIO_InitStruct.Pin = AD7730_RESET_PIN;
+//  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+//  GPIO_InitStruct.Pull = GPIO_NOPULL;
+//  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+//  HAL_GPIO_Init(AD7730_RESET_PORT, &GPIO_InitStruct);
+//
+//  GPIO_InitStruct.Pin = AD7730_SYNC_PIN;
+//  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+//  GPIO_InitStruct.Pull = GPIO_NOPULL;
+//  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+//  HAL_GPIO_Init(AD7730_SYNC_PORT, &GPIO_InitStruct);
 
 }
 
@@ -617,52 +600,55 @@ static void MX_GPIO_Init(void)
   * @retval None
   */
 static void Init_Gauges(void){
-	HAL_GPIO_WritePin(AD7730_RESET_PORT, AD7730_RESET_PIN, 1); //hold /reset high in normal operation
-	HAL_GPIO_WritePin(AD7730_SYNC_PORT, AD7730_SYNC_PIN, 1); //hold /sync high in normal operation
+	//HAL_GPIO_WritePin(AD7730_RESET_PORT, AD7730_RESET_PIN, 1); //hold /reset high in normal operation
+	//HAL_GPIO_WritePin(AD7730_SYNC_PORT, AD7730_SYNC_PIN, 1); //hold /sync high in normal operation
 
-//	gauge1.SS_GPIO_Port = GAUGE1_SS_PORT;
-//	gauge1.RDY_GPIO_Port = GAUGE1_RDY_PORT;
-//	gauge1.SS_Pin = GAUGE1_SS_PIN;
-//	gauge1.RDY_Pin = GAUGE1_RDY_PIN;
-//	AD7730_Init(gauge1);
-
-	gauge1.SS_GPIO_Port = GPIOE;
-	gauge1.RDY_GPIO_Port = GPIOE;
-	gauge1.SS_Pin = GPIO_PIN_9;
-	gauge1.RDY_Pin = GPIO_PIN_7;
+	gauge1.SS_GPIO_Port = GAUGE1_SS_PORT;
+	gauge1.RDY_GPIO_Port = GAUGE1_RDY_PORT;
+	gauge1.SS_Pin = GAUGE1_SS_PIN;
+	gauge1.RDY_Pin = GAUGE1_RDY_PIN;
+	gauge1.data_buffer = (uint8_t *)&gauge1_data_buffer;
+	gauge1.offset_buffer = (uint8_t *)&gauge1_offsets;
 	AD7730_Init(gauge1);
 
 	gauge2.SS_GPIO_Port = GAUGE2_SS_PORT;
 	gauge2.RDY_GPIO_Port = GAUGE2_RDY_PORT;
 	gauge2.SS_Pin = GAUGE2_SS_PIN;
 	gauge2.RDY_Pin = GAUGE2_RDY_PIN;
+	gauge2.data_buffer = (uint8_t *)&gauge2_data_buffer;
+	gauge2.offset_buffer = (uint8_t *)&gauge2_offsets;
 	AD7730_Init(gauge2);
 
 	gauge3.SS_GPIO_Port = GAUGE3_SS_PORT;
 	gauge3.RDY_GPIO_Port = GAUGE3_RDY_PORT;
 	gauge3.SS_Pin = GAUGE3_SS_PIN;
 	gauge3.RDY_Pin = GAUGE3_RDY_PIN;
+	gauge3.data_buffer = (uint8_t *)&gauge3_data_buffer;
+	gauge3.offset_buffer = (uint8_t *)&gauge3_offsets;
 	AD7730_Init(gauge3);
 
 	gauge4.SS_GPIO_Port = GAUGE4_SS_PORT;
 	gauge4.RDY_GPIO_Port = GAUGE4_RDY_PORT;
 	gauge4.SS_Pin = GAUGE4_SS_PIN;
 	gauge4.RDY_Pin = GAUGE4_RDY_PIN;
+	gauge4.data_buffer = (uint8_t *)&gauge4_data_buffer;
+	gauge4.offset_buffer = (uint8_t *)&gauge4_offsets;
 	AD7730_Init(gauge4);
 
-	AD7730_Reset();
+    //software reset on begin
+	AD7730_soft_reset(gauge1);
+	AD7730_soft_reset(gauge2);
+	AD7730_soft_reset(gauge3);
+	AD7730_soft_reset(gauge4);
 
-	AD7730_Config(gauge3); //config gauge with all pre-configured settings
+  	HAL_GPIO_WritePin(LD6_GPIO_Port, LD6_Pin, 0);
+
 	AD7730_Config(gauge1); //config gauge with all pre-configured settings
 	AD7730_Config(gauge2); //config gauge with all pre-configured settings
-
+	AD7730_Config(gauge3); //config gauge with all pre-configured settings
 	AD7730_Config(gauge4); //config gauge with all pre-configured settings
+
 }
-
-
-/* USER CODE BEGIN 4 */
-
-/* USER CODE END 4 */
 
 /**
   * @brief  This function is executed in case of error occurrence.

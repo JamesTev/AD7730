@@ -2,7 +2,7 @@
  * opto_force.h
  *
  *  Created on: 02 Aug 2018
- *      Author: jamesteversham
+ *  Author: James Teversham (jamestevers@gmail.com)
  */
 
 #ifndef OPTO_FORCE_H_
@@ -20,6 +20,7 @@
 
 #define filter_500Hz 1
 #define filter_150Hz 2
+#define filter_50Hz 3
 
 #define no_filter 0
 #define zeroing 255

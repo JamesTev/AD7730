@@ -2,7 +2,7 @@
  * AD7730.h
  *
  *  Created on: 02 Aug 2018
- *      Author: jamesteversham
+ *  Author: James Teversham (jamestevers@gmail.com)
  */
 #include "stm32f4xx.h"
 
@@ -10,8 +10,9 @@
 #define AD7730_H_
 
 #define SYSTEM_CALIBRATION 0
-#define DIFFERENTIAL_POLARITY_SWITCH 1
-#define PGA_GAIN 130
+#define MANUAL_CAL 1
+#define DIFFERENTIAL_POLARITY_SWITCH 0
+#define PGA_GAIN 120
 
 #define GAUGE1_RDY_PORT GPIOE
 #define GAUGE1_RDY_PIN	GPIO_PIN_7
@@ -126,12 +127,21 @@ volatile uint8_t gauge2_data_buffer[3];
 volatile uint8_t gauge3_data_buffer[3];
 volatile uint8_t gauge4_data_buffer[3]; //do we need to define these in a source file?
 
+volatile uint8_t gauge1_offsets[3];
+volatile uint8_t gauge2_offsets[3];
+volatile uint8_t gauge3_offsets[3];
+volatile uint8_t gauge4_offsets[3];
+
+char initial_config_done;
+
 typedef struct _ad7730
 {
 	GPIO_TypeDef* SS_GPIO_Port; //port of SCK
 	GPIO_TypeDef* RDY_GPIO_Port; //port of SCK
 	uint16_t SS_Pin;
 	uint16_t RDY_Pin;
+	volatile uint8_t * offset_buffer;
+	volatile uint8_t * data_buffer;
 
 } AD7730;
 
@@ -146,8 +156,12 @@ void AD7730_Start_Cont_Read(AD7730 gauge);
 void AD7730_Read_Cont(AD7730 gauge, uint8_t * rx_buffer);
 void AD7730_Stop_Cont_Read(AD7730 gauge);
 void AD7730_Reset(void);
+void AD7730_Sync(void);
 void delayUS(uint32_t us);
-int32_t AD7730_Process_Reading_Num(uint8_t * rx_buffer);
-float AD7730_Process_Reading_Percent(uint8_t * rx_buffer);
+int32_t AD7730_Process_Reading_Num(AD7730 gauge);
+float AD7730_Process_Reading_Percent(AD7730 gauge);
+uint8_t Verify_Reading(float reading, float prev_reading);
+uint8_t AD7730_Set_Cal_Params(AD7730 gauge);
+uint8_t Check_Calibration_Params(AD7730 gauge);
 
 #endif /* AD7730_H_ */
