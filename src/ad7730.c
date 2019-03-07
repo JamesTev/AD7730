@@ -370,6 +370,7 @@ void AD7730_Reset(void){
 	HAL_GPIO_WritePin(AD7730_RESET_PORT, AD7730_RESET_PIN, GPIO_PIN_SET);
 }
 
+//Haven't tested this
 void AD7730_Sync(void){
 	HAL_GPIO_WritePin(AD7730_SYNC_PORT, AD7730_SYNC_PIN, GPIO_PIN_RESET);
 	HAL_Delay(1);

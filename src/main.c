@@ -181,9 +181,6 @@ int main(void)
 		  count=0;
 	  }
 
-	  //11101100101111111010111
-	  //11101100110011001001000
-	  //111011001100111001001000
   }
 }
 
@@ -335,16 +332,15 @@ static void Extract_Gauge_Data(volatile uint8_t * source_buffer, uint8_t * dest_
 }
 
 void Transmit_SR(void){
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, 0);
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, 0);
 	HAL_SPI_Transmit(&hspi1, (uint8_t *)&spi_tx_buffer, 1, 1000); //will this just discard data shifted into RX data register?
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, 1); //rising edge to latch data into output register
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, 1); //rising edge to latch data into output register
 	//HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 0);
 }
 
 void Receive_SR(void){
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, 0);
-	//HAL_Delay(1);
-	HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, 1); //rising edge to latch data into output register
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, 0);
+	HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, 1); //rising edge to latch data into output register
 	HAL_SPI_Receive(&hspi1, (uint8_t *)&spi_rx_buffer, 1, 1000); //will this just discard data shifted into RX data register?
 	//HAL_GPIO_WritePin(GPIOC, GPIO_PIN_1, 0);
 }
@@ -578,6 +574,20 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : RCLK_Pin PB14 */
+  GPIO_InitStruct.Pin = GPIO_PIN_14;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : load/shift tx pin PB12 */
+  GPIO_InitStruct.Pin = GPIO_PIN_12;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   //Uncomment this section to control RESET and SYNC pins with software
 
